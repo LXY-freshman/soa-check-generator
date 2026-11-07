@@ -29,6 +29,10 @@ _MODEL_LIMIT_RE = re.compile(
     r"(?P<value>'[^']*'|\"[^\"]*\"|[^\s]+)",
     re.I,
 )
+_INSTANCE_RE = re.compile(
+    r"^\s*(?P<instance>[A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*\)\s+(?P<master>[A-Za-z_][A-Za-z0-9_]*)",
+    re.I,
+)
 
 
 def _unquote(value: str) -> str:
@@ -193,6 +197,34 @@ def parse_model_limits(text: str) -> dict[str, list[dict[str, str]]]:
     return {name: values for name, values in limits.items() if values}
 
 
+def parse_subckt_dependencies(text: str) -> dict[str, list[str]]:
+    """Find subckt masters instantiated inside other subckts."""
+    definitions = {name for name, _ports, _line in parse_model_definitions(text)}
+    dependencies: dict[str, list[str]] = {}
+    current: str | None = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith(("//", "*", "$")):
+            continue
+        subckt = _SUBCKT_RE.match(raw)
+        if subckt:
+            current = subckt.group("name")
+            dependencies.setdefault(current, [])
+            continue
+        if re.match(r"^\s*(?:ends|\.ends|end\s+subckt)\b", raw, re.I):
+            current = None
+            continue
+        if current is None:
+            continue
+        instance = _INSTANCE_RE.match(raw)
+        if not instance:
+            continue
+        master = instance.group("master")
+        if master in definitions and master != current and master not in dependencies[current]:
+            dependencies[current].append(master)
+    return {name: values for name, values in dependencies.items() if values}
+
+
 def detect_model_soa(text: str) -> dict[str, object]:
     """Detect model-internal SOA without treating every bsource as SOA."""
     gsoa_match = re.search(r"(?im)^\s*gsoa\b", text)
@@ -323,6 +355,7 @@ def merge_devices(devices: Iterable[Device], rules: Iterable[Rule]) -> list[Devi
             current.port_confidence = "confirmed"
         current.model_parameters.update(incoming.model_parameters)
         current.model_limits.extend(item for item in incoming.model_limits if item not in current.model_limits)
+        current.associated_devices = list(dict.fromkeys([*current.associated_devices, *incoming.associated_devices]))
         if incoming.parameter_confidence == "confirmed":
             current.parameter_confidence = "confirmed"
         if current.family_voltage is None:

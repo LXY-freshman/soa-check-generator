@@ -6,7 +6,7 @@ from soa_generator.classify import classify_device
 from soa_generator.adapters import apply_adapter_config
 from soa_generator.export import ExportSet, model_soa_export_metadata, project_json, render_spectre, select_rules
 from soa_generator.models import Device
-from soa_generator.parsers import detect_model_soa, parse_device_list, parse_model_definitions, parse_model_limits, parse_model_parameters, parse_spectre_asserts
+from soa_generator.parsers import detect_model_soa, parse_device_list, parse_model_definitions, parse_model_limits, parse_model_parameters, parse_spectre_asserts, parse_subckt_dependencies
 from soa_generator.schema import validate_adapter_config, validate_project_payload
 from soa_generator.service import _spectre_diagnostics, parse_sources, parse_text
 from soa_generator.validation import lint_rules
@@ -159,6 +159,19 @@ ends n50_ckt
         self.assertTrue(any(rule["limit_kind"] == "Vgs" and rule["maximum"] == "5.5" for rule in rules))
         self.assertTrue(any(rule["limit_kind"] == "Vgd" or rule["limit_kind"] == "terminal_voltage" for rule in rules))
         self.assertTrue(all(not rule["enabled"] for rule in rules))
+
+    def test_subckt_dependencies_keep_parent_and_child_targets(self) -> None:
+        text = """simulator lang=spectre
+subckt child (d g s b)
+ends child
+subckt parent (d g s b)
+xcore (d g s b) child
+ends parent
+"""
+        self.assertEqual(parse_subckt_dependencies(text), {"parent": ["child"]})
+        payload = parse_text(text, "hierarchy.scs")
+        parent = next(device for device in payload["devices"] if device["name"] == "parent")
+        self.assertEqual(parent["associated_devices"], ["child"])
 
     def test_model_soa_detection_does_not_treat_every_bsource_as_soa(self) -> None:
         ordinary = "subckt demo d g s b\ncgb (g b) bsource q=1\n"

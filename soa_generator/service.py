@@ -28,6 +28,7 @@ from .parsers import (
     parse_model_definitions,
     parse_model_parameters,
     parse_model_limits,
+    parse_subckt_dependencies,
     parse_spectre_asserts,
     detect_model_soa,
     topology_rule_candidates,
@@ -280,11 +281,13 @@ def parse_source(source: dict[str, Any], adapter_config: dict[str, Any] | None =
     definitions = parse_model_definitions(text)
     model_parameters = parse_model_parameters(text)
     model_limits = parse_model_limits(text)
+    dependencies = parse_subckt_dependencies(text)
     for name, ports, line in definitions:
         device = classify_device(name, "model")
         apply_port_metadata(device, ports)
         device.model_parameters = model_parameters.get(name, {})
         device.model_limits = model_limits.get(name, [])
+        device.associated_devices = dependencies.get(name, [])
         if device.model_parameters:
             device.parameter_confidence = "confirmed"
         device.source = SourceEvidence(path=path, line=line, mechanism="unknown", note="模型定义")
@@ -317,11 +320,13 @@ def parse_text(text: str, path: str, adapter_config: dict[str, Any] | None = Non
     source_rule_count = len(rules)
     model_parameters = parse_model_parameters(text)
     model_limits = parse_model_limits(text)
+    dependencies = parse_subckt_dependencies(text)
     for name, ports, line in parse_model_definitions(text):
         device = classify_device(name, "model")
         apply_port_metadata(device, ports)
         device.model_parameters = model_parameters.get(name, {})
         device.model_limits = model_limits.get(name, [])
+        device.associated_devices = dependencies.get(name, [])
         if device.model_parameters:
             device.parameter_confidence = "confirmed"
         device.source = SourceEvidence(path=path, line=line, mechanism="unknown", note="模型定义")
@@ -381,6 +386,7 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
         definitions = parse_model_definitions(text)
         model_parameters = parse_model_parameters(text)
         model_limits = parse_model_limits(text)
+        dependencies = parse_subckt_dependencies(text)
         definition_map: dict[str, tuple[list[str], int]] = {}
         for name, ports, line in definitions:
             previous = definition_map.get(name)
@@ -396,6 +402,7 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
             apply_port_metadata(device, ports)
             device.model_parameters = model_parameters.get(name, {})
             device.model_limits = model_limits.get(name, [])
+            device.associated_devices = dependencies.get(name, [])
             if device.model_parameters:
                 device.parameter_confidence = "confirmed"
             apply_adapter_config([device], rules, adapter_config)
@@ -565,12 +572,14 @@ class Handler(BaseHTTPRequestHandler):
                     })
                     model_parameters = parse_model_parameters(text_value)
                     model_limits = parse_model_limits(text_value)
+                    dependencies = parse_subckt_dependencies(text_value)
                     model_devices: list[Any] = []
                     for name, ports, line in parse_model_definitions(text_value):
                         device = classify_device(name, "model")
                         apply_port_metadata(device, ports)
                         device.model_parameters = model_parameters.get(name, {})
                         device.model_limits = model_limits.get(name, [])
+                        device.associated_devices = dependencies.get(name, [])
                         if device.model_parameters:
                             device.parameter_confidence = "confirmed"
                         apply_adapter_config([device], rules, body.get("adapter_config"))

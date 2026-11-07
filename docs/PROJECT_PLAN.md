@@ -39,6 +39,7 @@
 - [x] 电阻、二极管、BJT、Varactor、MIM/MOM、ESD 类别识别和端子解析
 - [x] Spectre/HSPICE 模型安全参数提取（`bv_max`、`bv/vb`、`ibv`、`fv_max`）
 - [x] 扫描 Spectre 子电路模型生成关闭的 `Vds/Vgs/Vbs/Vbd` 和端子耐压候选
+- [x] 解析 Spectre subckt 父子依赖并按组合器件展开导出规则
 - [ ] CDF/OA 终端顺序和参数表解析
 
 ### M2 派生配置与导出
