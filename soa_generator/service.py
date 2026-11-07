@@ -17,6 +17,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from .discovery import CandidateFile, discover_local, summarize_candidates
+from .adapters import apply_adapter_config
 from .classify import apply_port_metadata, classify_device
 from .export import model_soa_export_metadata, project_json, render_spectre, select_rules
 from .inference import non_mos_rule_candidates
@@ -30,6 +31,7 @@ from .parsers import (
     topology_rule_candidates,
 )
 from .validation import lint_rules
+from .schema import adapter_metadata, project_schema_document, validate_adapter_config, validate_project_payload
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -263,7 +265,7 @@ def discover(source: dict[str, Any]) -> list[CandidateFile]:
     return discover_local(str(path))
 
 
-def parse_source(source: dict[str, Any]) -> dict[str, Any]:
+def parse_source(source: dict[str, Any], adapter_config: dict[str, Any] | None = None) -> dict[str, Any]:
     text = read_source(source)
     path = str(source["path"])
     lower = path.lower()
@@ -280,6 +282,7 @@ def parse_source(source: dict[str, Any]) -> dict[str, Any]:
         device.source = SourceEvidence(path=path, line=line, mechanism="unknown", note="模型定义")
         devices.append(device)
     devices = merge_devices(devices, rules)
+    apply_adapter_config(devices, rules, adapter_config)
     candidates = topology_rule_candidates(devices, rules, path)
     rules.extend(candidates)
     rules.extend(non_mos_rule_candidates(devices, rules, path))
@@ -287,13 +290,14 @@ def parse_source(source: dict[str, Any]) -> dict[str, Any]:
     safe_source = {key: value for key, value in source.items() if key != "password"}
     return {
         "source": safe_source,
+        "adapter": adapter_metadata(adapter_config),
         "devices": [item.to_dict() for item in devices],
         "rules": [item.to_dict() for item in rules],
         "summary": {"files": 1, "devices": len(devices), "rules": len(rules)},
     }
 
 
-def parse_text(text: str, path: str) -> dict[str, Any]:
+def parse_text(text: str, path: str, adapter_config: dict[str, Any] | None = None) -> dict[str, Any]:
     lower = path.lower()
     if "devicelist" in lower or lower.endswith("device_list"):
         devices = parse_device_list(text, path)
@@ -308,12 +312,14 @@ def parse_text(text: str, path: str) -> dict[str, Any]:
         device.source = SourceEvidence(path=path, line=line, mechanism="unknown", note="模型定义")
         devices.append(device)
     devices = merge_devices(devices, rules)
+    apply_adapter_config(devices, rules, adapter_config)
     rules.extend(topology_rule_candidates(devices, rules, path))
     rules.extend(non_mos_rule_candidates(devices, rules, path))
     devices = merge_devices(devices, rules)
     model_soa = detect_model_soa(text)
     return {
         "source": {"kind": "browser_file", "path": path},
+        "adapter": adapter_metadata(adapter_config),
         "devices": [item.to_dict() for item in devices],
         "rules": [item.to_dict() for item in rules],
         "file_results": [{
@@ -332,7 +338,7 @@ def parse_text(text: str, path: str) -> dict[str, Any]:
     }
 
 
-def parse_sources(sources: list[dict[str, Any]]) -> dict[str, Any]:
+def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] | None = None) -> dict[str, Any]:
     devices = []
     rules: list[Rule] = []
     seen_paths: set[str] = set()
@@ -370,6 +376,7 @@ def parse_sources(sources: list[dict[str, Any]]) -> dict[str, Any]:
             ports, line = definition_map[name]
             device = classify_device(name, "model")
             apply_port_metadata(device, ports)
+            apply_adapter_config([device], rules, adapter_config)
             device.source = SourceEvidence(
                 path=path,
                 line=line,
@@ -390,6 +397,13 @@ def parse_sources(sources: list[dict[str, Any]]) -> dict[str, Any]:
         file_results.append(file_result)
         evidence.append(file_result)
     devices = merge_devices(devices, rules)
+    apply_adapter_config(devices, rules, adapter_config)
+    topology = topology_rule_candidates(devices, rules)
+    for rule in topology:
+        key = (rule.target, rule.name, rule.expr, rule.maximum, rule.minimum)
+        if key not in seen_rules:
+            seen_rules.add(key)
+            rules.append(rule)
     non_mos = non_mos_rule_candidates(devices, rules)
     rules.extend(non_mos)
     devices = merge_devices(devices, rules)
@@ -413,6 +427,7 @@ def parse_sources(sources: list[dict[str, Any]]) -> dict[str, Any]:
     safe_sources = [{key: value for key, value in source.items() if key != "password"} for source in sources]
     return {
         "sources": safe_sources,
+        "adapter": adapter_metadata(adapter_config),
         "devices": [item.to_dict() for item in devices],
         "rules": [item.to_dict() for item in rules],
         "file_results": file_results,
@@ -459,6 +474,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/health":
             self._send_json({"ok": True, "service": self.server_version})
             return
+        if path == "/api/schema":
+            self._send_json(project_schema_document())
+            return
         file_path = WEB_ROOT / ("index.html" if path in {"", "/"} else path.lstrip("/"))
         if not file_path.is_file() or WEB_ROOT not in file_path.parents:
             self.send_error(404)
@@ -479,13 +497,13 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"summary": summarize_candidates(candidates), "candidates": [item.to_dict() for item in candidates]})
                 return
             if path == "/api/parse":
-                self._send_json(parse_source(body["source"]))
+                self._send_json(parse_source(body["source"], body.get("adapter_config")))
                 return
             if path == "/api/parse_text":
-                self._send_json(parse_text(str(body.get("text", "")), str(body.get("path", "browser-file"))))
+                self._send_json(parse_text(str(body.get("text", "")), str(body.get("path", "browser-file")), body.get("adapter_config")))
                 return
             if path == "/api/parse_sources":
-                self._send_json(parse_sources(body.get("sources", [])))
+                self._send_json(parse_sources(body.get("sources", []), body.get("adapter_config")))
                 return
             if path == "/api/parse_texts":
                 devices = []
@@ -521,6 +539,7 @@ class Handler(BaseHTTPRequestHandler):
                     for name, ports, line in parse_model_definitions(text_value):
                         device = classify_device(name, "model")
                         apply_port_metadata(device, ports)
+                        apply_adapter_config([device], rules, body.get("adapter_config"))
                         device.source = SourceEvidence(
                             path=path_value,
                             line=line,
@@ -540,10 +559,17 @@ class Handler(BaseHTTPRequestHandler):
                             seen_rules.add(key)
                             rules.append(rule)
                 devices = merge_devices(devices, rules)
+                apply_adapter_config(devices, rules, body.get("adapter_config"))
+                topology = topology_rule_candidates(devices, rules)
+                for rule in topology:
+                    key = (rule.target, rule.name, rule.expr, rule.maximum, rule.minimum)
+                    if key not in seen_rules:
+                        seen_rules.add(key)
+                        rules.append(rule)
                 non_mos = non_mos_rule_candidates(devices, rules)
                 rules.extend(non_mos)
                 devices = merge_devices(devices, rules)
-                self._send_json({"devices": [item.to_dict() for item in devices], "rules": [item.to_dict() for item in rules], "file_results": file_results, "summary": {"files": len(body.get("files", [])), "devices": len(devices), "rules": len(rules), "inferred_rules": len(non_mos)}})
+                self._send_json({"adapter": adapter_metadata(body.get("adapter_config")), "devices": [item.to_dict() for item in devices], "rules": [item.to_dict() for item in rules], "file_results": file_results, "summary": {"files": len(body.get("files", [])), "devices": len(devices), "rules": len(rules), "inferred_rules": len(non_mos)}})
                 return
             if path == "/api/export":
                 rules = [_rule_from_dict(value) for value in body.get("rules", [])]
@@ -573,6 +599,9 @@ class Handler(BaseHTTPRequestHandler):
                         export_set=export_set,
                         model_sources=model_sources,
                         model_soa_mode=model_soa_mode,
+                        devices=body.get("devices", []),
+                        sources=body.get("sources", []),
+                        adapter=body.get("adapter_config"),
                     ) if "json" in export_set.formats else None,
                     "model_soa": model_metadata,
                 })
@@ -593,6 +622,17 @@ class Handler(BaseHTTPRequestHandler):
                     model_soa_mode=str(body.get("model_soa_mode", "annotate")),
                 )
                 self._send_json(result)
+                return
+            if path == "/api/schema":
+                self._send_json(project_schema_document())
+                return
+            if path == "/api/validate_project":
+                issues = validate_project_payload(body.get("project"))
+                self._send_json({"ok": not issues, "issues": issues})
+                return
+            if path == "/api/validate_adapter":
+                issues = validate_adapter_config(body.get("adapter_config"))
+                self._send_json({"ok": not issues, "issues": issues})
                 return
             self.send_error(404)
         except Exception as exc:  # service boundary: return readable UI error

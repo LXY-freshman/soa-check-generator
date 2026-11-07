@@ -9,6 +9,7 @@ from .discovery import discover_local, summarize_candidates
 from .export import project_json, render_spectre, select_rules
 from .models import ExportSet
 from .parsers import detect_model_soa, merge_devices, parse_device_list, parse_spectre_asserts
+from .schema import validate_adapter_config
 
 
 def _read(path: str) -> str:
@@ -35,6 +36,12 @@ def command_parse(args: argparse.Namespace) -> int:
 
 def command_export(args: argparse.Namespace) -> int:
     rules = parse_spectre_asserts(_read(args.path), source_path=args.path)
+    adapter = None
+    if args.adapter_config:
+        adapter = json.loads(_read(args.adapter_config))
+        issues = validate_adapter_config(adapter)
+        if issues:
+            raise SystemExit("适配器配置无效：" + "；".join(item["message"] for item in issues))
     export_set = ExportSet(name=args.name, formats=args.formats)
     selected = select_rules(rules, export_set)
     model_sources = []
@@ -64,6 +71,7 @@ def command_export(args: argparse.Namespace) -> int:
                 export_set=export_set,
                 model_sources=model_sources,
                 model_soa_mode=args.model_soa_mode,
+                adapter=adapter,
             ),
             encoding="utf-8",
         )
@@ -89,6 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--formats", nargs="+", choices=("spectre", "json"), default=["spectre", "json"])
     export.add_argument("--model-source", action="append", default=[], help="模型内 SOA 文件，可重复传入")
     export.add_argument("--model-soa-mode", choices=("native", "annotate", "approximate", "dual"), default="native")
+    export.add_argument("--adapter-config", help="soa-adapter/v1 JSON 配置")
     export.set_defaults(func=command_export)
     return parser
 

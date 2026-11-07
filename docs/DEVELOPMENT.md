@@ -17,6 +17,8 @@
 4. 检查 `git diff --check` 和 `git status`，确认没有工艺文件、凭据或临时输出。
 5. 功能完成后合并回 `main`，同时更新 `docs/PROJECT_PLAN.md` 和必要的 ADR/词汇表。
 
+项目文件使用 `soa-project/v1`；工艺差异使用 `soa-adapter/v1` JSON 配置。适配器应先通过 `/api/validate_adapter` 或测试验证，再用于解析。
+
 ## 数据与隐私边界
 
 - PDK 原始目录只读，不复制进仓库。

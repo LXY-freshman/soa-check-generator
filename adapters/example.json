@@ -1,0 +1,22 @@
+{
+  "schema": "soa-adapter/v1",
+  "id": "example-process",
+  "version": "0.1",
+  "description": "脱敏适配器示例",
+  "device_rules": [
+    {
+      "pattern": "^custom12_",
+      "category": "LDMOS",
+      "family": "ldmos",
+      "scope": "active",
+      "family_voltage": 12.0,
+      "topology": ["iso"]
+    },
+    {
+      "pattern": "^custom_iso_30v",
+      "isolation_voltage": 30.0,
+      "isolation_confidence": "documented",
+      "topology": ["iso", "nbl", "psub"]
+    }
+  ]
+}

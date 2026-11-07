@@ -67,7 +67,7 @@
 
 ### M4 扩展入口
 
-- [ ] 稳定 JSON schema
-- [ ] 本地 CLI/API
-- [ ] AGENTS.md 和适配器开发文档
-- [ ] 新工艺分类、端口和推断策略配置
+- [x] 稳定 `soa-project/v1` JSON schema 和项目校验接口
+- [x] 本地 CLI/API 扩展入口
+- [x] `AGENTS.md` 和适配器开发文档
+- [x] 新工艺分类、端口和推断策略配置的适配器基础

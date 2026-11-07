@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Iterable
 
 from .models import ExportSet, Rule
+from .schema import PROJECT_SCHEMA, adapter_metadata, validate_adapter_config, validate_project_payload
 
 
 MODEL_SOA_MODES = {"native", "annotate", "approximate", "dual"}
@@ -122,15 +123,29 @@ def project_json(
     extra: dict[str, object] | None = None,
     model_sources: Iterable[dict[str, object]] | None = None,
     model_soa_mode: str = "native",
+    devices: Iterable[dict[str, object]] | None = None,
+    sources: Iterable[dict[str, object]] | None = None,
+    adapter: dict[str, object] | None = None,
 ) -> str:
+    if adapter is not None:
+        adapter_issues = validate_adapter_config(adapter)
+        if adapter_issues:
+            raise ValueError("适配器配置无效：" + "；".join(item["message"] for item in adapter_issues))
     payload: dict[str, object] = {
-        "schema": "soa-project/v1",
+        "schema": PROJECT_SCHEMA,
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "process": {"path": process_path, "version": process_version},
+        "generator": {"name": "soa-generator", "version": "0.1"},
+        "process": {"path": process_path, "version": process_version, "adapter": adapter_metadata(adapter)},
+        "adapter_config": adapter,
         "export_set": export_set.to_dict(),
+        "devices": list(devices or []),
+        "sources": list(sources or []),
         "rules": [rule.to_dict() for rule in rules],
         "model_soa": model_soa_export_metadata(model_sources, model_soa_mode),
     }
     if extra:
         payload.update(extra)
+    issues = validate_project_payload(payload)
+    if issues:
+        raise ValueError("项目 JSON 不符合 schema：" + "；".join(item["message"] for item in issues))
     return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"

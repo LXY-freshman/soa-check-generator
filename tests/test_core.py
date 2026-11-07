@@ -3,8 +3,11 @@ import unittest
 from pathlib import Path
 
 from soa_generator.classify import classify_device
+from soa_generator.adapters import apply_adapter_config
 from soa_generator.export import ExportSet, model_soa_export_metadata, project_json, render_spectre, select_rules
+from soa_generator.models import Device
 from soa_generator.parsers import detect_model_soa, parse_device_list, parse_model_definitions, parse_spectre_asserts
+from soa_generator.schema import validate_adapter_config, validate_project_payload
 from soa_generator.service import _spectre_diagnostics, parse_sources, parse_text
 from soa_generator.validation import lint_rules
 
@@ -159,6 +162,43 @@ WARNING (SPECTRE-17607): Assert `check' is ignored.
         self.assertEqual(issues[0]["severity"], "error")
         self.assertIn("spectre_sfe-874", issues[0]["code"])
         self.assertTrue(any(item["severity"] == "warning" for item in issues))
+
+    def test_adapter_config_overrides_device_metadata(self) -> None:
+        device = Device(name="custom12_iso_ckt", family="unknown")
+        config = {
+            "schema": "soa-adapter/v1",
+            "id": "demo",
+            "version": "1",
+            "device_rules": [{
+                "pattern": "^custom12_",
+                "family": "ldmos",
+                "scope": "active",
+                "family_voltage": 12,
+                "topology": ["iso"],
+            }],
+        }
+        apply_adapter_config([device], [], config)
+        self.assertEqual(device.family, "ldmos")
+        self.assertEqual(device.family_voltage, 12.0)
+        self.assertIn("iso", device.topology)
+        self.assertEqual(validate_adapter_config(config), [])
+
+    def test_project_schema_keeps_devices_and_adapter(self) -> None:
+        rules = parse_spectre_asserts('check assert sub=n50_ckt expr="V(d,s)" max=5')
+        adapter = {"schema": "soa-adapter/v1", "id": "demo", "version": "1", "device_rules": []}
+        project = project_json(
+            process_path="/pdk",
+            process_version="v1",
+            rules=rules,
+            export_set=ExportSet(formats=["json"]),
+            devices=[{"name": "n50_ckt", "family": "mos"}],
+            sources=[{"path": "/pdk/soa.mdl", "kind": "spectre_soa"}],
+            adapter=adapter,
+        )
+        payload = __import__("json").loads(project)
+        self.assertEqual(validate_project_payload(payload), [])
+        self.assertEqual(payload["devices"][0]["name"], "n50_ckt")
+        self.assertEqual(payload["adapter_config"]["id"], "demo")
 
     def test_model_soa_export_modes_are_explicit(self) -> None:
         rules = parse_spectre_asserts('check assert sub=n50_ckt expr="V(d,s)" max=5')

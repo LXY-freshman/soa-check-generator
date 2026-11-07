@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "soa-project/v1",
+  "type": "object",
+  "required": ["schema", "created_at", "process", "export_set", "rules"],
+  "properties": {
+    "schema": {"const": "soa-project/v1"},
+    "created_at": {"type": "string"},
+    "generator": {"type": "object"},
+    "process": {"type": "object", "required": ["path", "version"]},
+    "adapter_config": {"type": ["object", "null"]},
+    "export_set": {"type": "object"},
+    "devices": {"type": "array"},
+    "sources": {"type": "array"},
+    "rules": {"type": "array"},
+    "model_soa": {"type": "object"}
+  }
+}
