@@ -10,6 +10,7 @@ _ISO_VOLTAGE = re.compile(r"(?:iso|isoring|hvbn|hvnwell|dpw|ddnw)[_-]?(\d+)(?:v)
 _NBL_ISO_VOLTAGE = re.compile(r"(?:nbl|hvnwell|dpw)[_-](\d+)v(?:_|$)", re.I)
 _DESCRIPTOR_VOLTAGE = re.compile(r"^[np](?:ch|mos)(\d+)d(\d+)", re.I)
 _TEXT_VOLTAGE = re.compile(r"(?:^|_)(\d+)p(\d+)v(?:_|$)", re.I)
+_VOLTAGE_PAIR = re.compile(r"\bv\s*\(\s*([^,\s()]+)\s*,\s*([^,\s()]+)\s*\)", re.I)
 
 
 def classify_family(name: str) -> str:
@@ -151,7 +152,14 @@ def classify_limit(expr: str, message: str | None = None) -> str:
     return "other"
 
 
+def terminal_pair(expr: str) -> list[str]:
+    """Extract the first explicit voltage terminal pair from a Spectre expr."""
+    match = _VOLTAGE_PAIR.search(expr or "")
+    return [match.group(1), match.group(2)] if match else []
+
+
 def apply_device_metadata(rule: Rule) -> Rule:
     rule.device_family = classify_family(rule.target)
     rule.limit_kind = classify_limit(rule.expr, rule.message)
+    rule.terminal_pair = terminal_pair(rule.expr)
     return rule

@@ -93,7 +93,14 @@ rhrp_lc10k_3t_ckt
         self.assertIn("nbl", by_name["n50_hvbn_30v_ckt"]["topology"])
         self.assertEqual(by_name["pch3d3_nbl_7v_7t_mac"]["family_voltage"], 3.3)
         self.assertEqual(by_name["pch3d3_nbl_7v_7t_mac"]["isolation_voltage"], 7.0)
-        self.assertTrue(any(rule["limit_kind"] == "isolation_bv" for rule in payload["rules"]))
+        self.assertEqual(
+            next(rule for rule in payload["rules"] if rule["target"] == "n50_hvbn_30v_ckt")["terminal_pair"],
+            ["nbl", "psub"],
+        )
+        self.assertFalse(any(rule["target"] == "n50_hvbn_30v_ckt" and rule["confidence"] == "inferred" for rule in payload["rules"]))
+        pch_candidates = [rule for rule in payload["rules"] if rule["target"] == "pch3d3_nbl_7v_7t_mac"]
+        self.assertTrue(any(rule["limit_kind"] == "isolation_bv" and not rule["enabled"] for rule in pch_candidates))
+        self.assertEqual(pch_candidates[0]["terminal_pair"], ["nbl", "psub"])
 
 
 if __name__ == "__main__":

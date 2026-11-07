@@ -64,6 +64,7 @@ class Rule:
     section: str | None = None
     line: int | None = None
     limit_kind: str = "other"
+    terminal_pair: list[str] = field(default_factory=list)
     device_family: str = "unknown"
     confidence: Confidence = "confirmed"
     enabled: bool = True

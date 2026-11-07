@@ -170,6 +170,7 @@ def topology_rule_candidates(
             duration="t_trans_hv",
             section="soa_generated",
             limit_kind="isolation_bv",
+            terminal_pair=[left, right],
             device_family=device.family,
             confidence="inferred",
             enabled=False,
