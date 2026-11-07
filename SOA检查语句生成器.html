@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOA 检查语句生成器</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%231F4E9C'/%3E%3Cpath d='M7 7h10M7 12h7M7 17h10' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+:root{
+  --navy:#1F4E9C; --blue:#2E5FAC; --lb:#EAF1FB; --yel:#FFF6E0;
+  --line:#D9E1EC; --ink:#1F2A3D; --grey:#5B6B82;
+  --green:#2E7D32; --green-d:#1B5E20; --red:#C0392B; --red-d:#922B21;
+  --mono:Consolas,"SF Mono",Menlo,Monaco,"Courier New",monospace;
+  --sans:"Microsoft YaHei","PingFang SC","Hiragino Sans GB","Segoe UI",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:var(--sans);color:var(--ink);background:#F4F7FB;font-size:14px;line-height:1.6}
+.wrap{max-width:1280px;margin:0 auto;padding:0 24px 64px}
+
+header.top{background:linear-gradient(120deg,#1F4E9C,#2E5FAC);color:#fff;padding:26px 0 24px;margin-bottom:28px}
+header.top .wrap{padding-bottom:0}
+header.top h1{margin:0;font-size:24px;font-weight:700;letter-spacing:.5px}
+header.top p{margin:8px 0 0;font-size:13px;color:#dce6f7}
+
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:20px 22px;margin-bottom:22px}
+.card > h2{margin:0 0 16px;font-size:16px;font-weight:700;color:var(--navy);display:flex;align-items:center;gap:9px}
+.card > h2 .bar{width:4px;height:17px;border-radius:2px;background:var(--blue)}
+.sub{font-size:12px;color:var(--grey);font-weight:400;margin-left:6px}
+
+.config-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+.field label{display:block;font-size:12px;font-weight:700;color:var(--blue);margin-bottom:7px}
+select,input[type=number]{width:100%;font-family:var(--sans);font-size:14px;color:var(--ink);
+  background:var(--yel);border:1px solid var(--line);border-radius:7px;padding:9px 11px;outline:none;height:42px}
+select:focus,input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(46,95,172,.13)}
+input[type=number]{background:var(--yel)}
+
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+th,td{border:1px solid var(--line);padding:7px 9px;font-size:12.5px;vertical-align:middle}
+thead th{background:var(--blue);color:#fff;font-weight:700;text-align:center}
+td.k{font-weight:700;text-align:center;background:var(--lb);color:var(--navy)}
+td.mean{color:var(--ink)}
+td.def{text-align:center;background:var(--lb);color:var(--grey);font-family:var(--mono);font-size:11.5px}
+td input{width:100%;border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:12.5px;
+  background:var(--yel);height:34px;color:var(--ink)}
+td input:focus{border-color:var(--blue);box-shadow:0 0 0 2px rgba(46,95,172,.12);outline:none}
+td.need{text-align:center;color:var(--grey)}
+td.need.on{color:var(--navy);font-weight:700}
+.scroll{max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:8px}
+.scroll table{border:none}
+.scroll th,.scroll td:last-child{position:sticky;top:0;z-index:1}
+
+pre.code{margin:0;background:#0f213d;color:#d8e4f5;padding:16px 18px;border-radius:8px;
+  font-family:var(--mono);font-size:12.5px;line-height:1.7;white-space:pre-wrap;word-break:break-all;
+  max-height:360px;overflow:auto}
+pre.code .head{color:#8fd0ff;font-weight:700}
+pre.code .blank{color:#5c7299}
+
+.actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:16px;align-items:center}
+button{font-family:var(--sans);font-size:14px;font-weight:700;border:none;border-radius:8px;
+  padding:11px 22px;cursor:pointer;color:#fff;display:inline-flex;align-items:center;gap:8px;min-height:44px;
+  transition:transform .05s ease,filter .15s ease}
+button:hover{filter:brightness(1.07)}
+button:active{transform:translateY(1px)}
+button svg{width:17px;height:17px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.btn-gen{background:var(--green);box-shadow:0 3px 0 var(--green-d)}
+.btn-clear{background:var(--red);box-shadow:0 3px 0 var(--red-d)}
+.btn-txt{background:var(--blue);box-shadow:0 3px 0 #234a85}
+.btn-ghost{background:#fff;color:var(--blue);border:1px solid var(--line);box-shadow:none}
+.btn-ghost svg{stroke:var(--blue)}
+.count{font-size:12.5px;color:var(--grey);margin-left:auto}
+
+.empty-tip{padding:26px 18px;text-align:center;color:var(--grey);font-size:13px}
+
+#toast{position:fixed;left:50%;bottom:34px;transform:translateX(-50%) translateY(20px);background:#1f2d44;
+  color:#fff;padding:11px 22px;border-radius:9px;font-size:13.5px;opacity:0;pointer-events:none;
+  transition:opacity .2s ease,transform .2s ease;z-index:99;max-width:88vw}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+footer{margin-top:30px;font-size:12px;color:var(--grey);text-align:center}
+
+@media (max-width:900px){
+  .config-grid{grid-template-columns:1fr 1fr}
+  .two-col{grid-template-columns:1fr}
+}
+@media (max-width:560px){
+  .wrap{padding:0 14px 48px}
+  .config-grid{grid-template-columns:1fr}
+  .card{padding:16px 14px}
+  .count{margin-left:0;width:100%}
+  select,input[type=number],td input{font-size:16px}
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <h1>SOA 检查语句生成器</h1>
+    <p>选器件、填参数与端口，点生成即可累积整套 assert 语句；最后一键导出 txt。所有计算在本地浏览器完成，不上传数据。</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ===== 配置区 ===== -->
+  <section class="card">
+    <h2><span class="bar"></span>器件配置</h2>
+    <div class="config-grid">
+      <div class="field">
+        <label>工艺</label>
+        <select id="sel-process"></select>
+      </div>
+      <div class="field">
+        <label>器件类型</label>
+        <select id="sel-dev"></select>
+      </div>
+      <div class="field">
+        <label>Subckt Name</label>
+        <select id="sel-subckt"></select>
+      </div>
+      <div class="field">
+        <label>编号起始（默认 1）</label>
+        <input type="number" id="in-start" value="1" min="1" step="1">
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 参数与端口 ===== -->
+  <div class="two-col">
+    <section class="card">
+      <h2><span class="bar"></span>参数定义<span class="sub">自定义值留空则用默认值</span></h2>
+      <div class="scroll">
+        <table>
+          <colgroup><col style="width:24%"><col style="width:34%"><col style="width:21%"><col style="width:21%"></colgroup>
+          <thead><tr><th>逻辑参数</th><th>参数含义</th><th>默认值</th><th>自定义值</th></tr></thead>
+          <tbody id="tb-params"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2><span class="bar"></span>端口定义<span class="sub">可改成实际网表端口名</span></h2>
+      <div class="scroll">
+        <table>
+          <colgroup><col style="width:18%"><col style="width:34%"><col style="width:16%"><col style="width:32%"></colgroup>
+          <thead><tr><th>逻辑端口</th><th>端口含义</th><th>是否需要</th><th>实际端口名</th></tr></thead>
+          <tbody id="tb-ports"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- ===== 实时预览 ===== -->
+  <section class="card">
+    <h2><span class="bar"></span>当前器件实时预览<span class="sub">改参数或端口即时更新，尚未写入累积区</span></h2>
+    <pre class="code" id="preview"></pre>
+    <div class="actions">
+      <button class="btn-gen" id="btn-generate">
+        <svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>生成按钮：追加到仿真器语句
+      </button>
+      <span class="count" id="preview-count"></span>
+    </div>
+  </section>
+
+  <!-- ===== 仿真器语句累积区 ===== -->
+  <section class="card">
+    <h2><span class="bar"></span>仿真器语句<span class="sub">多批次累积，批次间空两行</span></h2>
+    <pre class="code" id="output"></pre>
+    <div class="actions">
+      <button class="btn-txt" id="btn-txt">
+        <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2h16v-2"/></svg>一键生成 txt
+      </button>
+      <button class="btn-clear" id="btn-clear">
+        <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>清空按钮
+      </button>
+      <span class="count" id="output-count"></span>
+    </div>
+  </section>
+
+  <footer>需求与设计：OliverYu 余寅实　|　实现：豆包　|　数据固化于本文件，离线可用</footer>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const DATA = {"processes":["BCDA-HC"],"devOrder":["三端电阻","低压PMOS","低压NMOS","N型DEMOS","P型DEMOS","P型LDMOS","N型LDMOS"],"devIndex":{"三端电阻":{"start":1,"n":8,"defaultName":"rhrp_lc10k_3t_ckt","nbl":""},"低压PMOS":{"start":9,"n":23,"defaultName":"p18_iso_5_ckt","nbl":"nbl"},"低压NMOS":{"start":32,"n":20,"defaultName":"n18_iso_ckt","nbl":"hvbn"},"N型DEMOS":{"start":52,"n":18,"defaultName":"nde36_iso_ckt","nbl":"nbl"},"P型DEMOS":{"start":70,"n":14,"defaultName":"pde28_iso_ckt","nbl":""},"P型LDMOS":{"start":84,"n":9,"defaultName":"pld28_iso_ckt","nbl":""},"N型LDMOS":{"start":93,"n":13,"defaultName":"nld28_iso_ckt","nbl":"nbl"}},"devices":{"三端电阻":["rhrp_lc10k_3t_ckt"],"低压PMOS":["p18_iso_5_ckt","p50_iso_20_ckt","p50_iso_5_ckt","p50_lvt_iso_5_ckt"],"低压NMOS":["n18_iso_ckt","nnt18_iso_ckt","nnt50_iso_ckt","n50_iso_ckt"],"N型DEMOS":["nde36_iso_ckt","nde40_iso_ckt","nde40_lvt_iso_ckt"],"P型DEMOS":["pde28_iso_ckt","pde32_iso_ckt","pde36_iso_ckt","pde40_iso_ckt"],"P型LDMOS":["pld28_iso_ckt","pld36_iso_ckt","pld40_iso_ckt","pld5_lron_ckt"],"N型LDMOS":["nld28_iso_ckt","nld32_iso_ckt","nld36_iso_ckt","nld40_iso_ckt"]},"templates":{"三端电阻":[{"num":"1","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(v({n1},{n2}))/({P_cbv_ratio}*l*1e06) ;(ass_ex>1)\" message=\"n1-n2 OV\" level=warning duration=t_trans_hv //SMIC rule, res model cbv1 limit"},{"num":"2","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(v({n2},{n1}))/({P_cbv_ratio}*l*1e06) ;(ass_ex>1)\" message=\"n2-n1 OV\" level=warning duration=t_trans_hv //SMIC rule, res model cbv1 limit"},{"num":"3","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({n1},{sub})\" max={P_sub_bv} message=\"n1-sub OV\" level=warning duration=t_trans_hv"},{"num":"4","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({n1},{sub})\" min=-{P_sub_bv} message=\"n1-sub OV\" level=warning duration=t_trans_hv"},{"num":"5","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({n2},{sub})\" max={P_sub_bv} message=\"n2-sub OV\" level=warning duration=t_trans_hv"},{"num":"6","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({n2},{sub})\" min=-{P_sub_bv} message=\"n2-sub OV\" level=warning duration=t_trans_hv"},{"num":"7","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({n1})) / (w*nw);ass_ex<=-{P_jconv}\" message=\"current density >{P_j_density}mA/um\" level=warning duration=t_trans_hv"},{"num":"8","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({n1})) / (w*nw);ass_ex>={P_jconv}\" message=\"current density >{P_j_density}mA/um\" level=warning duration=t_trans_hv"}],"低压PMOS":[{"num":"1","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{s})\" max={P_gate_bv} message=\"GS OV\" level=warning duration=t_trans_hv //"},{"num":"2","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{s})\" min=-{P_gate_bv} message=\"GS OV\" level=warning duration=t_trans_hv //"},{"num":"3","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({d},{s})\" max={P_dsb_bv} message=\"DS OV\" level=warning duration=t_trans_hv"},{"num":"4","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({d},{s})\" min=-{P_dsb_bv} message=\"DS OV\" level=warning duration=t_trans_hv"},{"num":"5","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{d})\" max={P_gate_bv} message=\"GD OV\" level=warning duration=t_trans_hv"},{"num":"6","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{d})\" min=-{P_gate_bv} message=\"GD OV\" level=warning duration=t_trans_hv"},{"num":"7","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({b},{d})\" max={P_dsb_bv} message=\"DB OV\" level=warning duration=t_trans_hv"},{"num":"8","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({b},{s})\" max={P_dsb_bv} message=\"BS OV\" level=warning duration=t_trans_hv"},{"num":"9","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({b}));(ass_ex <= -{P_diode_fwd_flag})&&(V({s},{b})>{P_diode_vf_lsl})\" message=\"BS body diode forward conduct\" level=warning duration=t_trans_hv"},{"num":"10","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({b}))/w;(ass_ex <= -{P_diode_oc_j}*1000)&&(V({s},{b})>{P_diode_vf_lsl})\" message=\"BS body diode OC\" level=warning duration=t_trans_hv"},{"num":"11","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({b}));(ass_ex <= -{P_diode_fwd_flag})&&(V({d},{b})>{P_diode_vf_lsl})\" message=\"DB body diode forward conduct\" level=warning duration=t_trans_hv"},{"num":"12","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({b}))/w;(ass_ex <= -{P_diode_oc_j}*1000)&&(V({d},{b})>{P_diode_vf_lsl})\" message=\"DB body diode OC\" level=warning duration=t_trans_hv"},{"num":"13","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=v({nbl},{psub})/{P_iso_ring}; (ass_ex>{P_nbl_ext_ratio})\" message=\"nbl-psub bv\" level=warning duration=t_trans_hv"},{"num":"14","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=v({nbl},{pepi})/{P_iso_ring}; (ass_ex>{P_nbl_ext_ratio})\" message=\"nbl-pepi bv\" level=warning duration=t_trans_hv"},{"num":"15","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({pepi},{nbl})\" max={P_diode_nbl_vf} message=\"nbl-pepi forward conduct\" level=warning duration=t_trans_hv"},{"num":"16","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({psub},{nbl})\" max={P_diode_nbl_vf} message=\"psub-nbl diode forward conduct\" level=warning duration=t_trans_hv"},{"num":"17","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({pepi},{b})\" max={P_diode_nbl_vf} message=\"psub-nwell diode forward conduct\" level=warning duration=t_trans_hv"},{"num":"18","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({b},{pepi})\" max={P_pepi_bv} message=\"pepi-nwell BV\" level=warning duration=t_trans_hv"},{"num":"19","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({b},{nbl})\" max={P_pepi_bv} message=\"nwell-nbl BV\" level=warning duration=t_trans_hv"},{"num":"20","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=v({nbl},{b})/{P_iso_ring}; (ass_ex>{P_nbl_ext_ratio})\" message=\"nbl-nwell BV\" level=warning duration=t_trans_hv"},{"num":"21","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({s}))/(w/l); (ass_ex>=MOS_Current_Density) && ((w/l) > Digital_Block_MinWL_Ratio) \" message=\"nbl-nwell BV\" level=warning duration=t_trans_hv"},{"num":"21","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({s}))/((w*mr*nf)/l);(ass_ex*MOSOC_Check)>=(MOS_Current_Density) && ((w/l)>Digital_Block_MinWL_Ratio)\" message=\"MOS OC\" level=warning duration=t_trans_MOSOC_Check"},{"num":"22","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({d}))/((w*mr*nf)/l);(ass_ex*MOSOC_Check)>=(MOS_Current_Density) && ((w/l)>Digital_Block_MinWL_Ratio)\" message=\"MOS OC\" level=warning duration=t_trans_MOSOC_Check"}],"低压NMOS":[{"num":"1","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{s})\" max={P_gate_bv} message=\"GS OV\" level=warning duration=t_trans_hv //"},{"num":"2","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{s})\" min=-{P_gate_bv} message=\"GS OV\" level=warning duration=t_trans_hv //"},{"num":"3","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({d},{s})\" max={P_dsb_bv} message=\"DS OV\" level=warning duration=t_trans_hv"},{"num":"4","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({d},{s})\" min=-{P_dsb_bv} message=\"DS OV\" level=warning duration=t_trans_hv"},{"num":"5","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{d})\" max={P_gate_bv} message=\"GD OV\" level=warning duration=t_trans_hv"},{"num":"6","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{d})\" min=-{P_gate_bv} message=\"GD OV\" level=warning duration=t_trans_hv"},{"num":"7","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({d},{b})\" max={P_dsb_bv} message=\"DB OV\" level=warning duration=t_trans_hv"},{"num":"8","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({s},{b})\" max={P_dsb_bv} message=\"BS OV\" level=warning duration=t_trans_hv"},{"num":"9","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({b}));(ass_ex >= {P_diode_fwd_flag})&&(V({s},{b})<-{P_diode_vf_lsl})\" message=\"BS body diode forward conduct\" level=warning duration=t_trans_hv"},{"num":"10","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({b}))/w;(ass_ex >={P_diode_oc_j}*1000)&&(V({s},{b})<-{P_diode_vf_lsl})\" message=\"BS body diode OC\" level=warning duration=t_trans_hv"},{"num":"11","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({b}));(ass_ex >= {P_diode_fwd_flag})&&(V({d},{b})<-{P_diode_vf_lsl})\" message=\"DB body diode forward conduct\" level=warning duration=t_trans_hv"},{"num":"12","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({b}))/w;(ass_ex >={P_diode_oc_j}*1000)&&(V({d},{b})<-{P_diode_vf_lsl})\" message=\"DB body diode OC\" level=warning duration=t_trans_hv"},{"num":"13","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=v({nbl},{psub}); (ass_ex>{P_nbl_ext_ratio}*{P_iso_ring})\" message=\"nbl-psub bv\" level=warning duration=t_trans_hv"},{"num":"14","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=v({nbl},{b}); (ass_ex>{P_nbl_int_ratio}*{P_nbl_int_bv})\" message=\"nbl-nmos_body bv\" level=warning duration=t_trans_hv"},{"num":"15","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({b},{nbl})\" max={P_diode_nbl_vf} message=\"nbl-nmos_body (pepi) forward conduct\" level=warning duration=t_trans_hv"},{"num":"16","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({psub},{nbl})\" max={P_diode_nbl_vf} message=\"psub-nbl diode forward conduct\" level=warning duration=t_trans_hv"},{"num":"17","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({s}))/((w*mr*nf)/l);(ass_ex*MOSOC_Check)>=(MOS_Current_Density) && ((w/l)>Digital_Block_MinWL_Ratio)\" message=\"MOS OC\" level=warning duration=t_trans_MOSOC_Check"},{"num":"18","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({d}))/((w*mr*nf)/l);(ass_ex*MOSOC_Check)>=(MOS_Current_Density) && ((w/l)>Digital_Block_MinWL_Ratio)\" message=\"MOS OC\" level=warning duration=t_trans_MOSOC_Check"},{"num":"19","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({d}))/((w*mr*nf)/l);(ass_ex*MOSOC_Check)>=(MOS_Current_Density) && ((w/l)>Digital_Block_MinWL_Ratio)\" message=\"MOS OC\" level=warning duration=t_trans_MOSOC_Check"},{"num":"20","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=w*mr*nf;ass_ex>=MOS_TW_Limit_For_SAB_Check\" message=\"Bro, TW is too large, need add SAB in series\" level=warning duration=t_trans_hv"}],"N型DEMOS":[{"num":"10","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{s})\" max={P_gate_bv} message=\"GS OV\" level=warning duration=t_trans_hv //"},{"num":"11","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{s})\" min=-{P_gate_bv} message=\"GS OV\" level=warning duration=t_trans_hv //"},{"num":"12","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({d},{s})\" max={P_drain_bv}*{P_drain_bv_gain} message=\"DS OV\" level=warning duration=t_trans_hv"},{"num":"13","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({d},{s})\" min=-{P_dsb_bv} message=\"DS OV\" level=warning duration=t_trans_hv"},{"num":"14","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{d})\" max={P_gate_bv} message=\"GD OV\" level=warning duration=t_trans_hv"},{"num":"15","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{d})\" min=-{P_drain_bv}*{P_drain_bv_gain} message=\"GD OV\" level=warning duration=t_trans_hv"},{"num":"16","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({d},{b})\" max={P_drain_bv}*{P_drain_bv_gain} message=\"DB OV\" level=warning duration=t_trans_hv"},{"num":"17","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({s},{b})\" max={P_dsb_bv} message=\"BS OV\" level=warning duration=t_trans_hv"},{"num":"18","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({b}));(ass_ex >= {P_diode_fwd_flag})&&(V({s},{b})<-{P_diode_vf_lsl})\" message=\"BS body diode forward conduct\" level=warning duration=t_trans_hv"},{"num":"19","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({b}))/w;(ass_ex >= {P_diode_oc_j}*1000)&&(V({s},{b})<-{P_diode_vf_lsl})\" message=\"BS body diode OC\" level=warning duration=t_trans_hv"},{"num":"20","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({b}));(ass_ex >= {P_diode_fwd_flag})&&(V({d},{b})<-{P_diode_vf_lsl})\" message=\"DB body diode forward conduct\" level=warning duration=t_trans_hv"},{"num":"21","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({b}))/w;(ass_ex >= {P_diode_oc_j}*1000)&&(V({d},{b})<-{P_diode_vf_lsl})\" message=\"DB body diode OC\" level=warning duration=t_trans_hv"},{"num":"22","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=v({nbl},{psub})/{P_iso_ring}; (ass_ex>{P_nbl_ext_ratio})\" message=\"nbl-psub bv\" level=warning duration=t_trans_hv"},{"num":"23","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=v({nbl},{d})/{P_iso_ring}; (ass_ex>{P_nbl_ext_ratio})\" message=\"nbl-drain bv\" level=warning duration=t_trans_hv"},{"num":"24","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({b},{nbl})\" max={P_diode_nbl_vf} message=\"nbl-nmos_body (pepi) forward conduct\" level=warning duration=t_trans_hv"},{"num":"25","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({psub},{nbl})\" max={P_diode_nbl_vf} message=\"psub-nbl diode forward conduct\" level=warning duration=t_trans_hv"},{"num":"26","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=v({nbl},{b})/{P_iso_ring}; (ass_ex>{P_nbl_ext_ratio})\" message=\"nbl-body BV\" level=warning duration=t_trans_hv"},{"num":"27","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({d},{nbl})\" max={P_drain_bv}*{P_drain_bv_gain} message=\"drain-nbl BV\" level=warning duration=t_trans_hv"}],"P型DEMOS":[{"num":"10","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{s})\" max={P_gate_bv} message=\"GS OV\" level=warning duration=t_trans_hv //"},{"num":"11","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{s})\" min=-{P_gate_bv} message=\"GS OV\" level=warning duration=t_trans_hv //"},{"num":"12","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({s},{d})\" max={P_drain_bv}*{P_drain_bv_gain} message=\"DS OV\" level=warning duration=t_trans_hv"},{"num":"13","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({s},{d})\" min=-{P_dsb_bv} message=\"DS OV\" level=warning duration=t_trans_hv"},{"num":"14","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{d})\" max={P_drain_bv}*{P_drain_bv_gain} message=\"GD OV\" level=warning duration=t_trans_hv"},{"num":"15","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{d})\" min=-{P_gate_bv} message=\"GD OV\" level=warning duration=t_trans_hv"},{"num":"16","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({b},{d})\" max={P_drain_bv}*{P_drain_bv_gain} message=\"DB OV\" level=warning duration=t_trans_hv"},{"num":"17","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({b},{s})\" max={P_dsb_bv} message=\"BS OV\" level=warning duration=t_trans_hv"},{"num":"18","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({b}));(ass_ex <= -{P_diode_fwd_flag})&&(V({s},{b})>{P_diode_vf_lsl})\" message=\"BS body diode forward conduct\" level=warning duration=t_trans_hv"},{"num":"19","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({b}))/w;(ass_ex <= -{P_diode_oc_j}*1000)&&(V({s},{b})>{P_diode_vf_lsl})\" message=\"BS body diode OC\" level=warning duration=t_trans_hv"},{"num":"20","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({b}));(ass_ex <= -{P_diode_fwd_flag})&&(V({d},{b})>{P_diode_vf_lsl})\" message=\"DB body diode forward conduct\" level=warning duration=t_trans_hv"},{"num":"21","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=re(I({b}))/w;(ass_ex <= -{P_diode_oc_j}*1000)&&(V({d},{b})>{P_diode_vf_lsl})\" message=\"DB body diode OC\" level=warning duration=t_trans_hv"},{"num":"22","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=v({b},{psub})/{P_iso_ring}; (ass_ex>{P_nbl_ext_ratio})\" message=\"nbl(B)-psub bv\" level=warning duration=t_trans_hv"},{"num":"25","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({psub},{b})\" max={P_diode_nbl_vf} message=\"psub-nbl diode forward conduct\" level=warning duration=t_trans_hv"}],"P型LDMOS":[{"num":"10","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{bs})\" max={P_gate_bv} message=\"GS OV\" level=warning duration=t_trans_hv //"},{"num":"11","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{bs})\" min=-{P_gate_bv} message=\"GS OV\" level=warning duration=t_trans_hv //"},{"num":"12","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({bs},{d})\" max={P_drain_bv}*{P_drain_bv_gain} message=\"DS OV\" level=warning duration=t_trans_hv"},{"num":"13","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{d})\" max={P_drain_bv}*{P_drain_bv_gain} message=\"GD OV\" level=warning duration=t_trans_hv"},{"num":"14","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{d})\" min=-{P_gate_bv} message=\"GD OV\" level=warning duration=t_trans_hv"},{"num":"15","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=v({bs},{psub})/{P_iso_ring}; (ass_ex>{P_nbl_ext_ratio})\" message=\"nbl(B)-psub bv\" level=warning duration=t_trans_hv"},{"num":"16","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({psub},{bs})\" max={P_diode_nbl_vf} message=\"psub-nbl diode forward conduct\" level=warning duration=t_trans_hv"},{"num":"17","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({d},{bs})\" max={P_vf_ldmos_conduct} message=\"body diode forward conduct\" level=warning duration=t_trans_hv"},{"num":"18","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({d},{bs})\" max={P_vf_ldmos_oc} message=\"body diode OC\" level=warning duration=t_trans_hv"}],"N型LDMOS":[{"num":"10","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{bs})\" max={P_gate_bv} message=\"GS OV\" level=warning duration=t_trans_hv //"},{"num":"11","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{bs})\" min=-{P_gate_bv} message=\"GS OV\" level=warning duration=t_trans_hv //"},{"num":"12","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({d},{bs})\" max={P_drain_bv}*{P_drain_bv_gain} message=\"DS OV\" level=warning duration=t_trans_hv"},{"num":"13","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{d})\" max={P_gate_bv} message=\"GD OV\" level=warning duration=t_trans_hv"},{"num":"14","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({g},{d})\" min=-{P_drain_bv}*{P_drain_bv_gain} message=\"GD OV\" level=warning duration=t_trans_hv"},{"num":"16","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({bs},{d})\" max={P_vf_ldmos_conduct} message=\"body diode forward conduct\" level=warning duration=t_trans_hv"},{"num":"17","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({bs},{d})\" max={P_vf_ldmos_oc} message=\"body diode OC\" level=warning duration=t_trans_hv"},{"num":"18","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=v({nbl},{psub})/{P_iso_ring}; (ass_ex>{P_nbl_ext_ratio})\" message=\"nbl-psub bv\" level=warning duration=t_trans_hv"},{"num":"19","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=v({nbl},{d})/{P_iso_ring}; (ass_ex>{P_nbl_ext_ratio})\" message=\"nbl-drain bv\" level=warning duration=t_trans_hv"},{"num":"20","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({bs},{nbl})\" max={P_diode_nbl_vf} message=\"nbl-nmos_body (pepi) forward conduct\" level=warning duration=t_trans_hv"},{"num":"21","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({psub},{nbl})\" max={P_diode_nbl_vf} message=\"psub-nbl diode forward conduct\" level=warning duration=t_trans_hv"},{"num":"22","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"ass_ex=v({nbl},{b})/{P_iso_ring}; (ass_ex>{P_nbl_ext_ratio})\" message=\"nbl-body BV\" level=warning duration=t_trans_hv"},{"num":"23","full":"check{NUM}_{DEV} assert sub={DEV} expr=\"v({d},{nbl})\" max={P_drain_bv}*{P_drain_bv_gain} message=\"drain-nbl BV\" level=warning duration=t_trans_hv"}]},"meaning":{"三端电阻":{"1":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","2":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","3":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","4":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","5":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","6":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","7":"电流按有效宽度归一化后超过额定电流密度，防止过流","8":"电流按有效宽度归一化后超过额定电流密度，防止过流"},"低压PMOS":{"1":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","2":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","3":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","4":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","5":"栅极电压超过栅氧化层耐压，防止栅氧击穿（不可逆）","6":"栅极电压超过栅氧化层耐压，防止栅氧击穿（不可逆）","7":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","8":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","9":"寄生体二极管被正向偏置而导通，提示电流非预期地走了体二极管路径","10":"体二极管电流密度超过额定值，防止体二极管过流发热烧毁","11":"寄生体二极管被正向偏置而导通，提示电流非预期地走了体二极管路径","12":"体二极管电流密度超过额定值，防止体二极管过流发热烧毁","13":"NBL隔离环与该节点间电压超过隔离耐压，防止隔离结构击穿或诱发闩锁","14":"NBL隔离环与该节点间电压超过隔离耐压，防止隔离结构击穿或诱发闩锁","15":"NBL相关寄生PN结正向电压超过导通阈值，防止寄生结意外正向导通","16":"NBL相关寄生PN结正向电压超过导通阈值，防止寄生结意外正向导通","17":"NBL相关寄生PN结正向电压超过导通阈值，防止寄生结意外正向导通","18":"该PN结电压超过额定耐压，防止结击穿","19":"该PN结电压超过额定耐压，防止结击穿","20":"NBL隔离环与该节点间电压超过隔离耐压，防止隔离结构击穿或诱发闩锁","21":"沟道电流按有效宽长比归一化后超过额定电流密度，防止MOS过流/热失效","22":"沟道电流按有效宽长比归一化后超过额定电流密度，防止MOS过流/热失效"},"低压NMOS":{"1":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","2":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","3":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","4":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","5":"栅极电压超过栅氧化层耐压，防止栅氧击穿（不可逆）","6":"栅极电压超过栅氧化层耐压，防止栅氧击穿（不可逆）","7":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","8":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","9":"寄生体二极管被正向偏置而导通，提示电流非预期地走了体二极管路径","10":"体二极管电流密度超过额定值，防止体二极管过流发热烧毁","11":"寄生体二极管被正向偏置而导通，提示电流非预期地走了体二极管路径","12":"体二极管电流密度超过额定值，防止体二极管过流发热烧毁","13":"NBL隔离环与该节点间电压超过隔离耐压，防止隔离结构击穿或诱发闩锁","14":"NBL隔离环与该节点间电压超过隔离耐压，防止隔离结构击穿或诱发闩锁","15":"NBL相关寄生PN结正向电压超过导通阈值，防止寄生结意外正向导通","16":"NBL相关寄生PN结正向电压超过导通阈值，防止寄生结意外正向导通","17":"沟道电流按有效宽长比归一化后超过额定电流密度，防止MOS过流/热失效","18":"沟道电流按有效宽长比归一化后超过额定电流密度，防止MOS过流/热失效","19":"沟道电流按有效宽长比归一化后超过额定电流密度，防止MOS过流/热失效","20":"总宽w·mr·nf超过TW上限，大尺寸器件需串联SAB镇流，保证大电流下电流均匀、提升ESD能力"},"N型DEMOS":{"10":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","11":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","12":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","13":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","14":"栅极电压超过栅氧化层耐压，防止栅氧击穿（不可逆）","15":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","16":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","17":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","18":"寄生体二极管被正向偏置而导通，提示电流非预期地走了体二极管路径","19":"体二极管电流密度超过额定值，防止体二极管过流发热烧毁","20":"寄生体二极管被正向偏置而导通，提示电流非预期地走了体二极管路径","21":"体二极管电流密度超过额定值，防止体二极管过流发热烧毁","22":"NBL隔离环与该节点间电压超过隔离耐压，防止隔离结构击穿或诱发闩锁","23":"NBL隔离环与该节点间电压超过隔离耐压，防止隔离结构击穿或诱发闩锁","24":"NBL相关寄生PN结正向电压超过导通阈值，防止寄生结意外正向导通","25":"NBL相关寄生PN结正向电压超过导通阈值，防止寄生结意外正向导通","26":"NBL隔离环与该节点间电压超过隔离耐压，防止隔离结构击穿或诱发闩锁","27":"该PN结电压超过额定耐压，防止结击穿"},"P型DEMOS":{"10":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","11":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","12":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","13":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","14":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","15":"栅极电压超过栅氧化层耐压，防止栅氧击穿（不可逆）","16":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","17":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","18":"寄生体二极管被正向偏置而导通，提示电流非预期地走了体二极管路径","19":"体二极管电流密度超过额定值，防止体二极管过流发热烧毁","20":"寄生体二极管被正向偏置而导通，提示电流非预期地走了体二极管路径","21":"体二极管电流密度超过额定值，防止体二极管过流发热烧毁","22":"NBL隔离环与该节点间电压超过隔离耐压，防止隔离结构击穿或诱发闩锁","25":"NBL相关寄生PN结正向电压超过导通阈值，防止寄生结意外正向导通"},"P型LDMOS":{"10":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","11":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","12":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","13":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","14":"栅极电压超过栅氧化层耐压，防止栅氧击穿（不可逆）","15":"NBL隔离环与该节点间电压超过隔离耐压，防止隔离结构击穿或诱发闩锁","16":"NBL相关寄生PN结正向电压超过导通阈值，防止寄生结意外正向导通","17":"寄生体二极管被正向偏置而导通，提示电流非预期地走了体二极管路径","18":"体二极管电流密度超过额定值，防止体二极管过流发热烧毁"},"N型LDMOS":{"10":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","11":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","12":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","13":"栅极电压超过栅氧化层耐压，防止栅氧击穿（不可逆）","14":"两端口间电压超过PN结/漏源耐压，防止结反向击穿或漏源雪崩","16":"寄生体二极管被正向偏置而导通，提示电流非预期地走了体二极管路径","17":"体二极管电流密度超过额定值，防止体二极管过流发热烧毁","18":"NBL隔离环与该节点间电压超过隔离耐压，防止隔离结构击穿或诱发闩锁","19":"NBL隔离环与该节点间电压超过隔离耐压，防止隔离结构击穿或诱发闩锁","20":"NBL相关寄生PN结正向电压超过导通阈值，防止寄生结意外正向导通","21":"NBL相关寄生PN结正向电压超过导通阈值，防止寄生结意外正向导通","22":"NBL隔离环与该节点间电压超过隔离耐压，防止隔离结构击穿或诱发闩锁","23":"该PN结电压超过额定耐压，防止结击穿"}},"paramMeaning":{"sub_bv":"对 SUB 耐压（标称，1 倍，V）","j_density":"电阻电流密度（mA/um）","cbv_ratio":"cbv1 limit ratio（SMIC 耐压设计倍数）","gate_bv":"栅极 Poly Gate 耐压等级","dsb_bv":"漏/源体结耐压等级（DSB diode BV）","diode_fwd_flag":"体二极管正向导通触发（绝对电流）","diode_oc_j":"体二极管过流电流密度（mA/um）","diode_vf_lsl":"二极管正向 VF 最小值（LSL）","diode_nbl_vf":"NBL 相关结正向导通电压检查","nbl_ext_ratio":"NBL 对外 BV 等级增益","nbl_int_ratio":"NBL 对内 BV 等级增益","nbl_int_bv":"NBL 对内部 pw sp2 耐压","iso_ring":"ISO 隔离等级（iso_ring）","pepi_bv":"nwell-pepi（Vb-Vpepi）耐压","nbl_bv_pmos":"nwell-nbl（Vb-Vnbl）耐压","drain_bv":"漏极耐压等级（V）","drain_bv_gain":"ESD 仿真漏极耐压增益","vf_ldmos_conduct":"LDMOS 体二极管正向导通 VF","vf_ldmos_oc":"LDMOS 体二极管过流 VF"},"devParams":{"三端电阻":[["sub_bv",30],["j_density",0.1],["cbv_ratio",2.5]],"低压PMOS":[["gate_bv","Gate_BV_1p8"],["dsb_bv","DSB_diode_BV_1p8"],["diode_fwd_flag","Diode_Forward_conduct_current_Flag"],["diode_oc_j","Diode_OC_Current_Density"],["diode_vf_lsl","Diode_VF_Check_LSL"],["diode_nbl_vf","Diode_NBL_ForwardVF_Check"],["nbl_ext_ratio","NBL_BV_Ratio"],["iso_ring","iso_ring"],["pepi_bv",12],["nbl_bv_pmos",12]],"低压NMOS":[["gate_bv","Gate_BV_1p8"],["dsb_bv","DSB_diode_BV_1p8"],["diode_fwd_flag","Diode_Forward_conduct_current_Flag"],["diode_oc_j","Diode_OC_Current_Density"],["diode_vf_lsl","Diode_VF_Check_LSL"],["diode_nbl_vf","Diode_NBL_ForwardVF_Check"],["nbl_ext_ratio","NBL_External_BV_Ratio"],["nbl_int_ratio","NBL_Internal_BV_Ratio"],["nbl_int_bv","BV_NBL_to_Internal_PW_sp2_0"],["iso_ring","iso_ring"]],"N型DEMOS":[["gate_bv","Gate_BV_5"],["dsb_bv","DSB_diode_BV_5"],["diode_fwd_flag","Diode_Forward_conduct_current_Flag"],["diode_oc_j","Diode_OC_Current_Density"],["diode_vf_lsl","Diode_VF_Check_LSL"],["diode_nbl_vf","Diode_NBL_ForwardVF_Check"],["nbl_ext_ratio","NBL_BV_Ratio"],["iso_ring","iso_ring"],["drain_bv",36],["drain_bv_gain","Drain_BV_Gain"]],"P型DEMOS":[["gate_bv","Gate_BV_5"],["dsb_bv","DSB_diode_BV_5"],["diode_fwd_flag","Diode_Forward_conduct_current_Flag"],["diode_oc_j","Diode_OC_Current_Density"],["diode_vf_lsl","Diode_VF_Check_LSL"],["diode_nbl_vf","Diode_NBL_ForwardVF_Check"],["nbl_ext_ratio","NBL_BV_Ratio"],["iso_ring","iso_ring"],["drain_bv",28],["drain_bv_gain","Drain_BV_Gain"]],"P型LDMOS":[["gate_bv","Gate_BV_5"],["vf_ldmos_conduct","VF_LDMOS_Conduct"],["vf_ldmos_oc","VF_LDMOS_OC"],["diode_nbl_vf","Diode_NBL_ForwardVF_Check"],["nbl_ext_ratio","NBL_BV_Ratio"],["iso_ring","iso_ring"],["drain_bv",28],["drain_bv_gain","Drain_BV_Gain"]],"N型LDMOS":[["gate_bv","Gate_BV_5"],["vf_ldmos_conduct","VF_LDMOS_Conduct"],["vf_ldmos_oc","VF_LDMOS_OC"],["diode_nbl_vf","Diode_NBL_ForwardVF_Check"],["nbl_ext_ratio","NBL_BV_Ratio"],["iso_ring","iso_ring"],["drain_bv",28],["drain_bv_gain","Drain_BV_Gain"]]},"ports":[["g","栅极 Gate"],["d","漏极 Drain"],["s","源极 Source"],["b","体端 Body"],["nbl","NBL 隔离层（部分工艺叫 hvbn；留空按器件默认）"],["psub","P 衬底"],["pepi","P 外延层"],["bs","LDMOS 体端"],["n1","电阻端口1"],["n2","电阻端口2"],["sub","衬底"]]};
+
+const state = {
+  process: DATA.processes[0],
+  dev: DATA.devOrder[0],
+  subckt: '',
+  startNum: 1,
+  customParams: {},
+  portNames: {},
+  output: []
+};
+
+function esc(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function paramEffective(key, def){
+  const c = state.customParams[key];
+  return (c !== undefined && String(c).trim() !== '') ? c : def;
+}
+
+// 核心：复刻 Excel SUBSTITUTE 占位符替换链，生成当前器件整套语句
+function buildCurrentLines(){
+  const dev = state.dev;
+  const tpls = DATA.templates[dev];
+  const n = DATA.devIndex[dev].n;
+  const lines = [];
+  for(let k = 0; k < n; k++){
+    let s = tpls[k].full;
+    s = s.split('{DEV}').join(state.subckt);
+    s = s.split('{NUM}').join(String(state.startNum + k));
+    DATA.devParams[dev].forEach(([key, def]) => {
+      s = s.split('{P_' + key + '}').join(String(paramEffective(key, def)));
+    });
+    if(dev === '三端电阻'){
+      const jd = Number(paramEffective('j_density', getDef('j_density')));
+      s = s.split('{P_jconv}').join(String(jd * 1000));
+    }else{
+      s = s.split('{P_jconv}').join('');
+    }
+    DATA.ports.forEach(([pkey]) => {
+      let name;
+      if(pkey === 'nbl'){
+        const v = state.portNames['nbl'];
+        name = (v !== undefined && String(v).trim() !== '') ? v : DATA.devIndex[dev].nbl;
+      }else{
+        name = state.portNames[pkey] || pkey;
+      }
+      s = s.split('{' + pkey + '}').join(String(name));
+    });
+    lines.push(s);
+  }
+  return lines;
+}
+
+function getDef(key){
+  const found = DATA.devParams[state.dev].find(x => x[0] === key);
+  return found ? found[1] : '';
+}
+
+function portNeeded(pkey){
+  const token = '{' + pkey + '}';
+  return DATA.templates[state.dev].some(t => t.full.indexOf(token) !== -1);
+}
+
+// ---- 渲染下拉 ----
+function renderProcess(){
+  const el = document.getElementById('sel-process');
+  el.innerHTML = DATA.processes.map(p => '<option>' + esc(p) + '</option>').join('');
+}
+function renderDevOptions(){
+  const el = document.getElementById('sel-dev');
+  el.innerHTML = DATA.devOrder.map(d => '<option>' + esc(d) + '</option>').join('');
+  el.value = state.dev;
+}
+function renderSubcktOptions(){
+  const el = document.getElementById('sel-subckt');
+  el.innerHTML = DATA.devices[state.dev].map(s => '<option>' + esc(s) + '</option>').join('');
+  el.value = state.subckt;
+}
+
+// ---- 渲染参数表 ----
+function renderParams(){
+  const tb = document.getElementById('tb-params');
+  let html = '';
+  DATA.devParams[state.dev].forEach(([key, def]) => {
+    const cv = state.customParams[key] || '';
+    html += '<tr>'
+      + '<td class="k">' + esc(key) + '</td>'
+      + '<td class="mean">' + esc(DATA.paramMeaning[key] || '') + '</td>'
+      + '<td class="def">' + esc(def) + '</td>'
+      + '<td><input data-pk="' + esc(key) + '" value="' + esc(cv) + '" placeholder="留空用默认"></td>'
+      + '</tr>';
+  });
+  tb.innerHTML = html;
+  tb.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('input', () => {
+      state.customParams[inp.dataset.pk] = inp.value;
+      refreshPreview();
+    });
+  });
+}
+
+// ---- 渲染端口表 ----
+function renderPorts(){
+  const tb = document.getElementById('tb-ports');
+  let html = '';
+  DATA.ports.forEach(([pkey, mean]) => {
+    const needed = portNeeded(pkey);
+    const cur = state.portNames[pkey] || '';
+    const ph = pkey === 'nbl' ? ('留空按器件取 ' + (DATA.devIndex[state.dev].nbl || '—')) : pkey;
+    html += '<tr>'
+      + '<td class="k">' + esc(pkey) + '</td>'
+      + '<td class="mean">' + esc(mean) + '</td>'
+      + '<td class="need' + (needed ? ' on' : '') + '">' + (needed ? '需要' : '—') + '</td>'
+      + '<td><input data-pt="' + esc(pkey) + '" value="' + esc(cur) + '" placeholder="' + esc(ph) + '"></td>'
+      + '</tr>';
+  });
+  tb.innerHTML = html;
+  tb.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('input', () => {
+      state.portNames[inp.dataset.pt] = inp.value;
+      if(inp.dataset.pt === 'nbl') refreshPreview();
+      else refreshPreview();
+    });
+  });
+}
+
+// ---- 代码块渲染 ----
+function renderCode(el, lines){
+  el.innerHTML = '';
+  if(lines.length === 0){
+    const d = document.createElement('div');
+    d.className = 'empty-tip';
+    d.textContent = '（暂无内容）';
+    el.appendChild(d);
+    return;
+  }
+  lines.forEach(line => {
+    const div = document.createElement('div');
+    if(line.startsWith('// ')) div.className = 'head';
+    else if(line === '') div.className = 'blank';
+    div.textContent = line === '' ? ' ' : line;
+    el.appendChild(div);
+  });
+}
+
+function refreshPreview(){
+  const lines = buildCurrentLines();
+  renderCode(document.getElementById('preview'), ['// ' + state.subckt].concat(lines));
+  document.getElementById('preview-count').textContent = '当前器件 ' + lines.length + ' 条';
+}
+function renderOutput(){
+  renderCode(document.getElementById('output'), state.output);
+  const real = state.output.filter(x => !x.startsWith('// ') && x !== '').length;
+  document.getElementById('output-count').textContent = '已累积 ' + real + ' 条语句';
+}
+
+// ---- 生成批次 ----
+function generateBatch(){
+  const lines = buildCurrentLines();
+  if(lines.length === 0){
+    toast('当前器件没有可生成的检查语句，请先选择器件类型。');
+    return;
+  }
+  if(state.output.length > 0) state.output.push('', '');
+  state.output.push('// ' + state.subckt);
+  state.output.push.apply(state.output, lines);
+  renderOutput();
+  toast('已追加 ' + lines.length + ' 条语句到「仿真器语句」。');
+}
+
+// ---- 清空 ----
+function clearOutput(){
+  if(state.output.length === 0){
+    toast('「仿真器语句」当前已经是空的。');
+    return;
+  }
+  if(confirm('确定要清空「仿真器语句」的全部内容吗？此操作不可撤销。')){
+    state.output = [];
+    renderOutput();
+    toast('已清空「仿真器语句」。');
+  }
+}
+
+// ---- 一键导出 txt ----
+function downloadTxt(){
+  if(state.output.length === 0){
+    toast('「仿真器语句」为空，没有可导出的内容。');
+    return;
+  }
+  const text = state.output.join('\n');
+  const blob = new Blob([text], {type:'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'SOA仿真器语句.txt';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast('已生成并下载 txt 文件。');
+}
+
+// ---- toast ----
+let toastTimer = null;
+function toast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+// ---- 事件绑定 ----
+function init(){
+  state.subckt = DATA.devices[state.dev][0];
+  renderProcess();
+  renderDevOptions();
+  renderSubcktOptions();
+  renderParams();
+  renderPorts();
+  refreshPreview();
+  renderOutput();
+
+  document.getElementById('sel-process').addEventListener('change', e => { state.process = e.target.value; });
+  document.getElementById('sel-dev').addEventListener('change', e => {
+    state.dev = e.target.value;
+    state.customParams = {};
+    state.portNames = {};
+    state.subckt = DATA.devices[state.dev][0];
+    renderSubcktOptions();
+    renderParams();
+    renderPorts();
+    refreshPreview();
+  });
+  document.getElementById('sel-subckt').addEventListener('change', e => {
+    state.subckt = e.target.value;
+    refreshPreview();
+  });
+  document.getElementById('in-start').addEventListener('input', e => {
+    const v = parseInt(e.target.value, 10);
+    state.startNum = isNaN(v) || v < 1 ? 1 : v;
+    refreshPreview();
+  });
+  document.getElementById('btn-generate').addEventListener('click', generateBatch);
+  document.getElementById('btn-clear').addEventListener('click', clearOutput);
+  document.getElementById('btn-txt').addEventListener('click', downloadTxt);
+}
+init();
+</script>
+</body>
+</html>
