@@ -65,6 +65,17 @@ def _named_resistor_limit(device: Device, three_terminal: bool) -> tuple[float |
     return None, "缺少电阻工作电压或手册上限，不能安全生成数值候选。"
 
 
+def _numeric_parameter(device: Device, names: tuple[str, ...]) -> tuple[float, str] | None:
+    for name in names:
+        raw = device.model_parameters.get(name)
+        if raw is None:
+            continue
+        value = raw.strip().strip("()")
+        if re.fullmatch(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?", value):
+            return float(value), name
+    return None
+
+
 def _candidate(
     device: Device,
     *,
@@ -144,13 +155,20 @@ def non_mos_rule_candidates(
         if family == "resistor":
             value, reason = _named_resistor_limit(device, three_terminal_resistor)
             limit_kind = "resistor_substrate_voltage" if three_terminal_resistor else "resistor_terminal_voltage"
-        elif device.family_voltage is not None:
-            value = device.family_voltage * (1.0 + margin)
-            reason = f"{family} 缺少原生 SOA，按器件族电压 {device.family_voltage:g} V 加 {margin:.0%} 经验裕量。"
-            limit_kind = "reverse_voltage" if family == "diode" else "terminal_voltage"
-            minimum = f"{-value:g}"
         else:
-            continue
+            model_names = ("bv", "vb", "vbreakdown", "breakdown") if family in {"diode", "bjt", "esd_protection"} else ("bv_max", "vbreakdown", "breakdown")
+            model_value = _numeric_parameter(device, model_names)
+            if model_value:
+                value, parameter_name = model_value
+                reason = f"模型参数 {parameter_name}={value:g} 提供端子耐压线索；仍需确认它是否对应当前器件端口。"
+                limit_kind = "reverse_voltage" if family == "diode" else "terminal_voltage"
+            elif device.family_voltage is not None:
+                value = device.family_voltage * (1.0 + margin)
+                reason = f"{family} 缺少模型耐压参数，按器件族电压 {device.family_voltage:g} V 加 {margin:.0%} 经验裕量。"
+                limit_kind = "reverse_voltage" if family == "diode" else "terminal_voltage"
+            else:
+                continue
+            minimum = f"{-value:g}"
         if value is None:
             continue
         source = device.source.path if device.source else source_path

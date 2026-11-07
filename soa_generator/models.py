@@ -39,6 +39,8 @@ class Device:
     isolation_confidence: str = "missing"
     ports: list[str] = field(default_factory=list)
     port_confidence: str = "missing"
+    model_parameters: dict[str, str] = field(default_factory=dict)
+    parameter_confidence: str = "missing"
     aliases: list[str] = field(default_factory=list)
     source: SourceEvidence | None = None
     soa_status: str = "unknown"

@@ -37,6 +37,8 @@
 - [x] Spectre `subckt`/`inline subckt` 端口解析
 - [x] `nbl`/`psub`/`pepi`/`iso` 拓扑和隔离耐压候选识别
 - [x] 电阻、二极管、BJT、Varactor、MIM/MOM、ESD 类别识别和端子解析
+- [x] Spectre/HSPICE 模型安全参数提取（`bv_max`、`bv/vb`、`ibv`、`fv_max`）
+- [ ] CDF/OA 终端顺序和参数表解析
 
 ### M2 派生配置与导出
 

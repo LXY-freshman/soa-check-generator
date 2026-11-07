@@ -26,6 +26,7 @@ from .parsers import (
     merge_devices,
     parse_device_list,
     parse_model_definitions,
+    parse_model_parameters,
     parse_spectre_asserts,
     detect_model_soa,
     topology_rule_candidates,
@@ -276,9 +277,13 @@ def parse_source(source: dict[str, Any], adapter_config: dict[str, Any] | None =
         rules = parse_spectre_asserts(text, path)
         devices = []
     definitions = parse_model_definitions(text)
+    model_parameters = parse_model_parameters(text)
     for name, ports, line in definitions:
         device = classify_device(name, "model")
         apply_port_metadata(device, ports)
+        device.model_parameters = model_parameters.get(name, {})
+        if device.model_parameters:
+            device.parameter_confidence = "confirmed"
         device.source = SourceEvidence(path=path, line=line, mechanism="unknown", note="模型定义")
         devices.append(device)
     devices = merge_devices(devices, rules)
@@ -306,9 +311,13 @@ def parse_text(text: str, path: str, adapter_config: dict[str, Any] | None = Non
         rules = parse_spectre_asserts(text, path)
         devices = []
     source_rule_count = len(rules)
+    model_parameters = parse_model_parameters(text)
     for name, ports, line in parse_model_definitions(text):
         device = classify_device(name, "model")
         apply_port_metadata(device, ports)
+        device.model_parameters = model_parameters.get(name, {})
+        if device.model_parameters:
+            device.parameter_confidence = "confirmed"
         device.source = SourceEvidence(path=path, line=line, mechanism="unknown", note="模型定义")
         devices.append(device)
     devices = merge_devices(devices, rules)
@@ -363,6 +372,7 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
                 seen_rules.add(key)
                 rules.append(rule)
         definitions = parse_model_definitions(text)
+        model_parameters = parse_model_parameters(text)
         definition_map: dict[str, tuple[list[str], int]] = {}
         for name, ports, line in definitions:
             previous = definition_map.get(name)
@@ -376,6 +386,9 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
             ports, line = definition_map[name]
             device = classify_device(name, "model")
             apply_port_metadata(device, ports)
+            device.model_parameters = model_parameters.get(name, {})
+            if device.model_parameters:
+                device.parameter_confidence = "confirmed"
             apply_adapter_config([device], rules, adapter_config)
             device.source = SourceEvidence(
                 path=path,
@@ -539,10 +552,14 @@ class Handler(BaseHTTPRequestHandler):
                         "model_soa_line": model_soa["line"],
                         "model_soa_note": model_soa["note"],
                     })
+                    model_parameters = parse_model_parameters(text_value)
                     model_devices: list[Any] = []
                     for name, ports, line in parse_model_definitions(text_value):
                         device = classify_device(name, "model")
                         apply_port_metadata(device, ports)
+                        device.model_parameters = model_parameters.get(name, {})
+                        if device.model_parameters:
+                            device.parameter_confidence = "confirmed"
                         apply_adapter_config([device], rules, body.get("adapter_config"))
                         device.source = SourceEvidence(
                             path=path_value,

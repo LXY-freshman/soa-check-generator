@@ -17,6 +17,11 @@ _SUBCKT_RE = re.compile(
 )
 _MODEL_RE = re.compile(r"^\s*model\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)", re.I)
 _MODEL_SOA_PARAMETER_RE = re.compile(r"\bsoa_(?:ar|br|cr|dr|a|b|c|d|vdd|vgg|rt1|rt2)\b", re.I)
+_MODEL_PARAMETER_RE = re.compile(
+    r"\b(?P<key>bv_max|vbreakdown|breakdown|fv_max|ibv|bv|vb|jmax|current_density|rsh)\s*=\s*"
+    r"(?P<value>'[^']*'|\"[^\"]*\"|[^\s]+)",
+    re.I,
+)
 
 
 def _unquote(value: str) -> str:
@@ -117,6 +122,33 @@ def parse_model_definitions(text: str) -> list[tuple[str, list[str], int]]:
         if model:
             definitions.append((model.group("name"), [], line_number))
     return definitions
+
+
+def parse_model_parameters(text: str) -> dict[str, dict[str, str]]:
+    """Extract safety-related model parameters grouped by subckt/model name."""
+    parameters: dict[str, dict[str, str]] = {}
+    current: str | None = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith(("//", "*", "$")):
+            continue
+        subckt = _SUBCKT_RE.match(raw)
+        if subckt:
+            current = subckt.group("name")
+            parameters.setdefault(current, {})
+        else:
+            model = _MODEL_RE.match(raw)
+            if model:
+                current = model.group("name")
+                parameters.setdefault(current, {})
+            elif re.match(r"^\s*(?:ends|\.ends|end\s+subckt)\b", raw, re.I):
+                current = None
+        if current is None:
+            continue
+        for match in _MODEL_PARAMETER_RE.finditer(raw):
+            value = match.group("value").strip("'\"")
+            parameters[current][match.group("key").lower()] = value
+    return {name: values for name, values in parameters.items() if values}
 
 
 def detect_model_soa(text: str) -> dict[str, object]:
@@ -247,6 +279,9 @@ def merge_devices(devices: Iterable[Device], rules: Iterable[Rule]) -> list[Devi
         current.ports = list(dict.fromkeys([*current.ports, *incoming.ports]))
         if incoming.port_confidence == "confirmed":
             current.port_confidence = "confirmed"
+        current.model_parameters.update(incoming.model_parameters)
+        if incoming.parameter_confidence == "confirmed":
+            current.parameter_confidence = "confirmed"
         if current.family_voltage is None:
             current.family_voltage = incoming.family_voltage
         if current.isolation_voltage is None:

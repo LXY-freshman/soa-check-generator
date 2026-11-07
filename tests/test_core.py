@@ -6,7 +6,7 @@ from soa_generator.classify import classify_device
 from soa_generator.adapters import apply_adapter_config
 from soa_generator.export import ExportSet, model_soa_export_metadata, project_json, render_spectre, select_rules
 from soa_generator.models import Device
-from soa_generator.parsers import detect_model_soa, parse_device_list, parse_model_definitions, parse_spectre_asserts
+from soa_generator.parsers import detect_model_soa, parse_device_list, parse_model_definitions, parse_model_parameters, parse_spectre_asserts
 from soa_generator.schema import validate_adapter_config, validate_project_payload
 from soa_generator.service import _spectre_diagnostics, parse_sources, parse_text
 from soa_generator.validation import lint_rules
@@ -120,6 +120,29 @@ esd6_pnp_nbl
         pch_candidates = [rule for rule in payload["rules"] if rule["target"] == "pch3d3_nbl_7v_7t_mac"]
         self.assertTrue(any(rule["limit_kind"] == "isolation_bv" and not rule["enabled"] for rule in pch_candidates))
         self.assertEqual(pch_candidates[0]["terminal_pair"], ["nbl", "psub"])
+
+    def test_model_parameters_bind_to_devices_and_candidates(self) -> None:
+        text = """simulator lang=spectre
+model ndio18 diode
++ bv=11.5 ibv=625
+subckt ndio18 (p n)
+ends ndio18
+subckt pvar3d3_mac (n1 n2)
+cgg (n1 n2) capacitor c=1e-15 bv_max=5.5
+ends pvar3d3_mac
+"""
+        parameters = parse_model_parameters(text)
+        self.assertEqual(parameters["ndio18"]["bv"], "11.5")
+        self.assertEqual(parameters["ndio18"]["ibv"], "625")
+        self.assertEqual(parameters["pvar3d3_mac"]["bv_max"], "5.5")
+        payload = parse_text(text, "model_parameters.scs")
+        devices = {device["name"]: device for device in payload["devices"]}
+        self.assertEqual(devices["ndio18"]["model_parameters"]["bv"], "11.5")
+        diode_rule = next(rule for rule in payload["rules"] if rule["target"] == "ndio18")
+        self.assertEqual(diode_rule["maximum"], "11.5")
+        self.assertEqual(diode_rule["minimum"], "-11.5")
+        var_rule = next(rule for rule in payload["rules"] if rule["target"] == "pvar3d3_mac")
+        self.assertEqual(var_rule["maximum"], "5.5")
 
     def test_model_soa_detection_does_not_treat_every_bsource_as_soa(self) -> None:
         ordinary = "subckt demo d g s b\ncgb (g b) bsource q=1\n"
