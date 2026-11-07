@@ -16,6 +16,7 @@ _SUBCKT_RE = re.compile(
     re.I,
 )
 _MODEL_RE = re.compile(r"^\s*model\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)", re.I)
+_MODEL_SOA_PARAMETER_RE = re.compile(r"\bsoa_(?:ar|br|cr|dr|a|b|c|d|vdd|vgg|rt1|rt2)\b", re.I)
 
 
 def _unquote(value: str) -> str:
@@ -116,6 +117,27 @@ def parse_model_definitions(text: str) -> list[tuple[str, list[str], int]]:
         if model:
             definitions.append((model.group("name"), [], line_number))
     return definitions
+
+
+def detect_model_soa(text: str) -> dict[str, object]:
+    """Detect model-internal SOA without treating every bsource as SOA."""
+    gsoa_match = re.search(r"(?im)^\s*gsoa\b", text)
+    parameter_match = _MODEL_SOA_PARAMETER_RE.search(text)
+    if gsoa_match:
+        return {
+            "enabled": True,
+            "mechanism": "gsoa_bsource",
+            "line": text[: gsoa_match.start()].count("\n") + 1,
+            "note": "检测到 gsoa 行；SOA 由模型内部行为源实现。",
+        }
+    if parameter_match:
+        return {
+            "enabled": True,
+            "mechanism": "soa_parameters",
+            "line": text[: parameter_match.start()].count("\n") + 1,
+            "note": "检测到 soa_* 模型参数；需要保留模型原生实现，不能按 assert 重写。",
+        }
+    return {"enabled": False, "mechanism": None, "line": None, "note": ""}
 
 
 def _isolation_pair(device: Device) -> tuple[str, str] | None:

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from soa_generator.classify import classify_device
 from soa_generator.export import ExportSet, render_spectre, select_rules
-from soa_generator.parsers import parse_device_list, parse_model_definitions, parse_spectre_asserts
+from soa_generator.parsers import detect_model_soa, parse_device_list, parse_model_definitions, parse_spectre_asserts
 from soa_generator.service import parse_sources, parse_text
 from soa_generator.validation import lint_rules
 
@@ -101,6 +101,14 @@ rhrp_lc10k_3t_ckt
         pch_candidates = [rule for rule in payload["rules"] if rule["target"] == "pch3d3_nbl_7v_7t_mac"]
         self.assertTrue(any(rule["limit_kind"] == "isolation_bv" and not rule["enabled"] for rule in pch_candidates))
         self.assertEqual(pch_candidates[0]["terminal_pair"], ["nbl", "psub"])
+
+    def test_model_soa_detection_does_not_treat_every_bsource_as_soa(self) -> None:
+        ordinary = "subckt demo d g s b\ncgb (g b) bsource q=1\n"
+        self.assertFalse(detect_model_soa(ordinary)["enabled"])
+        internal = "subckt demo d g s b\nparameters soa_ar=1e-4 soa_vdd=1\ngsoa (d s) bsource i=soa_ar\n"
+        result = detect_model_soa(internal)
+        self.assertTrue(result["enabled"])
+        self.assertEqual(result["mechanism"], "gsoa_bsource")
 
 
 if __name__ == "__main__":

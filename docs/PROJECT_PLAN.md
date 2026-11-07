@@ -33,6 +33,7 @@
 - [x] 来源证据和可信度记录
 - [x] 普通模型/Cat/文档的文件角色与读取状态
 - [x] 模型 `subckt/model` 基础识别和模型内 SOA 线索
+- [x] 区分普通 `bsource` 与 `gsoa`/`soa_*` 模型内 SOA，并显示逐文件解析结果
 - [x] Spectre `subckt`/`inline subckt` 端口解析
 - [x] `nbl`/`psub`/`pepi`/`iso` 拓扑和隔离耐压候选识别
 
