@@ -6,7 +6,7 @@ from soa_generator.classify import classify_device
 from soa_generator.adapters import apply_adapter_config
 from soa_generator.export import ExportSet, model_soa_export_metadata, project_json, render_spectre, select_rules
 from soa_generator.models import Device
-from soa_generator.parsers import detect_model_soa, parse_device_list, parse_model_definitions, parse_model_parameters, parse_spectre_asserts
+from soa_generator.parsers import detect_model_soa, parse_device_list, parse_model_definitions, parse_model_limits, parse_model_parameters, parse_spectre_asserts
 from soa_generator.schema import validate_adapter_config, validate_project_payload
 from soa_generator.service import _spectre_diagnostics, parse_sources, parse_text
 from soa_generator.validation import lint_rules
@@ -116,7 +116,7 @@ esd6_pnp_nbl
             next(rule for rule in payload["rules"] if rule["target"] == "n50_hvbn_30v_ckt")["terminal_pair"],
             ["nbl", "psub"],
         )
-        self.assertFalse(any(rule["target"] == "n50_hvbn_30v_ckt" and rule["confidence"] == "inferred" for rule in payload["rules"]))
+        self.assertFalse(any(rule["target"] == "n50_hvbn_30v_ckt" and rule["limit_kind"] == "isolation_bv" and rule["confidence"] == "inferred" for rule in payload["rules"]))
         pch_candidates = [rule for rule in payload["rules"] if rule["target"] == "pch3d3_nbl_7v_7t_mac"]
         self.assertTrue(any(rule["limit_kind"] == "isolation_bv" and not rule["enabled"] for rule in pch_candidates))
         self.assertEqual(pch_candidates[0]["terminal_pair"], ["nbl", "psub"])
@@ -143,6 +143,22 @@ ends pvar3d3_mac
         self.assertEqual(diode_rule["minimum"], "-11.5")
         var_rule = next(rule for rule in payload["rules"] if rule["target"] == "pvar3d3_mac")
         self.assertEqual(var_rule["maximum"], "5.5")
+
+    def test_spectre_model_limits_generate_terminal_candidates(self) -> None:
+        text = """simulator lang=spectre
+subckt n50_ckt (d g s b)
+cgd (g d) capacitor c=1e-15 bv_max=5.5
+cgs (g s) capacitor c=1e-15 bv_max=5.5
+ends n50_ckt
+"""
+        limits = parse_model_limits(text)
+        self.assertEqual(limits["n50_ckt"][0]["left"], "g")
+        self.assertEqual(limits["n50_ckt"][0]["value"], "5.5")
+        payload = parse_text(text, "mos_model.scs")
+        rules = [rule for rule in payload["rules"] if rule["target"] == "n50_ckt"]
+        self.assertTrue(any(rule["limit_kind"] == "Vgs" and rule["maximum"] == "5.5" for rule in rules))
+        self.assertTrue(any(rule["limit_kind"] == "Vgd" or rule["limit_kind"] == "terminal_voltage" for rule in rules))
+        self.assertTrue(all(not rule["enabled"] for rule in rules))
 
     def test_model_soa_detection_does_not_treat_every_bsource_as_soa(self) -> None:
         ordinary = "subckt demo d g s b\ncgb (g b) bsource q=1\n"

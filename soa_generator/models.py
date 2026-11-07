@@ -40,6 +40,7 @@ class Device:
     ports: list[str] = field(default_factory=list)
     port_confidence: str = "missing"
     model_parameters: dict[str, str] = field(default_factory=dict)
+    model_limits: list[dict[str, str]] = field(default_factory=list)
     parameter_confidence: str = "missing"
     aliases: list[str] = field(default_factory=list)
     source: SourceEvidence | None = None

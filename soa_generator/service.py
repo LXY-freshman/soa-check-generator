@@ -20,13 +20,14 @@ from .discovery import CandidateFile, discover_local, summarize_candidates
 from .adapters import apply_adapter_config
 from .classify import apply_port_metadata, classify_device
 from .export import model_soa_export_metadata, project_json, render_spectre, select_rules
-from .inference import non_mos_rule_candidates
+from .inference import model_rule_candidates, non_mos_rule_candidates
 from .models import ExportSet, Rule, SourceEvidence
 from .parsers import (
     merge_devices,
     parse_device_list,
     parse_model_definitions,
     parse_model_parameters,
+    parse_model_limits,
     parse_spectre_asserts,
     detect_model_soa,
     topology_rule_candidates,
@@ -278,10 +279,12 @@ def parse_source(source: dict[str, Any], adapter_config: dict[str, Any] | None =
         devices = []
     definitions = parse_model_definitions(text)
     model_parameters = parse_model_parameters(text)
+    model_limits = parse_model_limits(text)
     for name, ports, line in definitions:
         device = classify_device(name, "model")
         apply_port_metadata(device, ports)
         device.model_parameters = model_parameters.get(name, {})
+        device.model_limits = model_limits.get(name, [])
         if device.model_parameters:
             device.parameter_confidence = "confirmed"
         device.source = SourceEvidence(path=path, line=line, mechanism="unknown", note="模型定义")
@@ -290,6 +293,7 @@ def parse_source(source: dict[str, Any], adapter_config: dict[str, Any] | None =
     apply_adapter_config(devices, rules, adapter_config)
     candidates = topology_rule_candidates(devices, rules, path)
     rules.extend(candidates)
+    rules.extend(model_rule_candidates(devices, rules, path))
     rules.extend(non_mos_rule_candidates(devices, rules, path))
     devices = merge_devices(devices, rules)
     safe_source = {key: value for key, value in source.items() if key != "password"}
@@ -312,10 +316,12 @@ def parse_text(text: str, path: str, adapter_config: dict[str, Any] | None = Non
         devices = []
     source_rule_count = len(rules)
     model_parameters = parse_model_parameters(text)
+    model_limits = parse_model_limits(text)
     for name, ports, line in parse_model_definitions(text):
         device = classify_device(name, "model")
         apply_port_metadata(device, ports)
         device.model_parameters = model_parameters.get(name, {})
+        device.model_limits = model_limits.get(name, [])
         if device.model_parameters:
             device.parameter_confidence = "confirmed"
         device.source = SourceEvidence(path=path, line=line, mechanism="unknown", note="模型定义")
@@ -323,6 +329,7 @@ def parse_text(text: str, path: str, adapter_config: dict[str, Any] | None = Non
     devices = merge_devices(devices, rules)
     apply_adapter_config(devices, rules, adapter_config)
     rules.extend(topology_rule_candidates(devices, rules, path))
+    rules.extend(model_rule_candidates(devices, rules, path))
     rules.extend(non_mos_rule_candidates(devices, rules, path))
     devices = merge_devices(devices, rules)
     model_soa = detect_model_soa(text)
@@ -373,6 +380,7 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
                 rules.append(rule)
         definitions = parse_model_definitions(text)
         model_parameters = parse_model_parameters(text)
+        model_limits = parse_model_limits(text)
         definition_map: dict[str, tuple[list[str], int]] = {}
         for name, ports, line in definitions:
             previous = definition_map.get(name)
@@ -387,6 +395,7 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
             device = classify_device(name, "model")
             apply_port_metadata(device, ports)
             device.model_parameters = model_parameters.get(name, {})
+            device.model_limits = model_limits.get(name, [])
             if device.model_parameters:
                 device.parameter_confidence = "confirmed"
             apply_adapter_config([device], rules, adapter_config)
@@ -417,6 +426,8 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
         if key not in seen_rules:
             seen_rules.add(key)
             rules.append(rule)
+    model_rules = model_rule_candidates(devices, rules)
+    rules.extend(model_rules)
     non_mos = non_mos_rule_candidates(devices, rules)
     rules.extend(non_mos)
     devices = merge_devices(devices, rules)
@@ -445,7 +456,7 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
         "rules": [item.to_dict() for item in rules],
         "file_results": file_results,
         "evidence": evidence,
-        "summary": {"files": len(seen_paths), "devices": len(devices), "rules": len(rules), "inferred_rules": len(non_mos), "evidence": len(evidence)},
+        "summary": {"files": len(seen_paths), "devices": len(devices), "rules": len(rules), "inferred_rules": len(non_mos) + len(model_rules), "evidence": len(evidence)},
     }
 
 
@@ -553,11 +564,13 @@ class Handler(BaseHTTPRequestHandler):
                         "model_soa_note": model_soa["note"],
                     })
                     model_parameters = parse_model_parameters(text_value)
+                    model_limits = parse_model_limits(text_value)
                     model_devices: list[Any] = []
                     for name, ports, line in parse_model_definitions(text_value):
                         device = classify_device(name, "model")
                         apply_port_metadata(device, ports)
                         device.model_parameters = model_parameters.get(name, {})
+                        device.model_limits = model_limits.get(name, [])
                         if device.model_parameters:
                             device.parameter_confidence = "confirmed"
                         apply_adapter_config([device], rules, body.get("adapter_config"))
@@ -587,10 +600,12 @@ class Handler(BaseHTTPRequestHandler):
                     if key not in seen_rules:
                         seen_rules.add(key)
                         rules.append(rule)
+                model_rules = model_rule_candidates(devices, rules)
+                rules.extend(model_rules)
                 non_mos = non_mos_rule_candidates(devices, rules)
                 rules.extend(non_mos)
                 devices = merge_devices(devices, rules)
-                self._send_json({"adapter": adapter_metadata(body.get("adapter_config")), "devices": [item.to_dict() for item in devices], "rules": [item.to_dict() for item in rules], "file_results": file_results, "summary": {"files": len(body.get("files", [])), "devices": len(devices), "rules": len(rules), "inferred_rules": len(non_mos)}})
+                self._send_json({"adapter": adapter_metadata(body.get("adapter_config")), "devices": [item.to_dict() for item in devices], "rules": [item.to_dict() for item in rules], "file_results": file_results, "summary": {"files": len(body.get("files", [])), "devices": len(devices), "rules": len(rules), "inferred_rules": len(non_mos) + len(model_rules)}})
                 return
             if path == "/api/export":
                 rules = [_rule_from_dict(value) for value in body.get("rules", [])]

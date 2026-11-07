@@ -16,6 +16,7 @@
 - 完善用户规则生命周期：重命名、复制、删除、恢复来源、编辑备注；覆盖值会进入 Spectre、快速检查和项目 JSON。
 - 将简单 SOA 区域图移入暂缓队列，下一阶段优先补齐器件参数和工艺数据解析。
 - 提取模型中的 `bv_max`、`bv/vb`、`ibv`、`fv_max` 等安全参数，并让非 MOS 候选优先使用模型证据。
+- 对 Spectre MOS/LDMOS/DEMOS 子电路按端口和族电压生成 `Vds/Vgs/Vbs/Vbd` 候选，模型端口 `bv_max` 优先且自动去重。
 
 ## Unreleased
 

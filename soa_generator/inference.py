@@ -194,3 +194,95 @@ def non_mos_rule_candidates(
                 )
             )
     return candidates
+
+
+def _model_limit_kind(left: str, right: str) -> str:
+    pair = {left.lower(), right.lower()}
+    if pair == {"d", "s"}:
+        return "Vds"
+    if pair == {"g", "s"}:
+        return "Vgs"
+    if pair == {"g", "b"} or pair == {"g", "bs"}:
+        return "Vgb"
+    if pair == {"d", "b"} or pair == {"d", "bs"}:
+        return "Vbd"
+    if pair == {"s", "b"} or pair == {"s", "bs"}:
+        return "Vbs"
+    return "terminal_voltage"
+
+
+def _numeric_value(raw: str) -> float | None:
+    value = raw.strip().strip("()")
+    if re.fullmatch(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?", value):
+        return float(value)
+    return None
+
+
+def model_rule_candidates(
+    devices: Iterable[Device],
+    existing_rules: Iterable[Rule],
+    source_path: str = "<inferred>",
+    margin: float = 0.10,
+) -> list[Rule]:
+    """Turn Spectre model safety parameters and MOS voltage names into candidates."""
+    existing = {(rule.target, re.sub(r"\s+", "", rule.expr).lower()) for rule in existing_rules}
+    candidates: list[Rule] = []
+    for device in devices:
+        source = device.source.path if device.source else source_path
+        for item in device.model_limits:
+            value = _numeric_value(item.get("value", ""))
+            left, right = item.get("left", ""), item.get("right", "")
+            if value is None or not left or not right:
+                continue
+            expr = f"v({left},{right})"
+            if (device.name, expr.replace(" ", "").lower()) in existing:
+                continue
+            key = item.get("key", "model_limit")
+            reason = f"Spectre 模型参数 {key}={value:g} 来自 {item.get('primitive', 'primitive')} 的端口 {left}/{right}；候选仍需确认是否为最终 SOA 上限。"
+            candidates.append(
+                _candidate(
+                    device,
+                    name=f"candidate_{device.name}_{key}_{left}_{right}",
+                    expr=expr,
+                    limit_kind=_model_limit_kind(left, right),
+                    maximum=f"{value:g}",
+                    minimum=f"{-value:g}",
+                    reason=reason,
+                    source_path=source,
+                    terminal_pair=[left, right],
+                )
+            )
+            existing.add((device.name, expr.replace(" ", "").lower()))
+        if device.family not in {"mos", "ldmos", "demos"} or device.family_voltage is None:
+            continue
+        if device.source and device.source.mechanism == "model_internal" and not device.model_limits:
+            continue
+        ports = {port.lower(): port for port in device.ports}
+        fallback_pairs = []
+        if ports.get("d") and ports.get("s"):
+            fallback_pairs.append((ports["d"], ports["s"], "Vds"))
+        if ports.get("g") and ports.get("s"):
+            fallback_pairs.append((ports["g"], ports["s"], "Vgs"))
+        if ports.get("b") and ports.get("s"):
+            fallback_pairs.append((ports["b"], ports["s"], "Vbs"))
+        value = device.family_voltage * (1.0 + margin)
+        for left, right, limit_kind in fallback_pairs:
+            expr = f"v({left},{right})"
+            if (device.name, expr.replace(" ", "").lower()) in existing:
+                continue
+            reason = f"Spectre 模型未提供 {limit_kind} 数值上限，按器件族电压 {device.family_voltage:g} V 加 {margin:.0%} 裕量生成候选；这不是 SOA 曲线。"
+            candidates.append(
+                _candidate(
+                    device,
+                    name=f"candidate_{device.name}_{limit_kind}_family_voltage",
+                    expr=expr,
+                    limit_kind=limit_kind,
+                    maximum=f"{value:g}",
+                    minimum=f"{-value:g}",
+                    reason=reason,
+                    source_path=source,
+                    terminal_pair=[left, right],
+                )
+            )
+            existing.add((device.name, expr.replace(" ", "").lower()))
+    return candidates

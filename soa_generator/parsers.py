@@ -22,6 +22,13 @@ _MODEL_PARAMETER_RE = re.compile(
     r"(?P<value>'[^']*'|\"[^\"]*\"|[^\s]+)",
     re.I,
 )
+_MODEL_LIMIT_RE = re.compile(
+    r"^\s*(?P<primitive>[A-Za-z_][A-Za-z0-9_]*)\s*\(\s*"
+    r"(?P<left>[^,\s()]+)\s+(?P<right>[^,\s()]+)\s*\)[^\n]*?"
+    r"\b(?P<key>bv_max|vbreakdown|breakdown|fv_max|bv|vb)\s*=\s*"
+    r"(?P<value>'[^']*'|\"[^\"]*\"|[^\s]+)",
+    re.I,
+)
 
 
 def _unquote(value: str) -> str:
@@ -149,6 +156,41 @@ def parse_model_parameters(text: str) -> dict[str, dict[str, str]]:
             value = match.group("value").strip("'\"")
             parameters[current][match.group("key").lower()] = value
     return {name: values for name, values in parameters.items() if values}
+
+
+def parse_model_limits(text: str) -> dict[str, list[dict[str, str]]]:
+    """Extract terminal-pair safety parameters from primitive model lines."""
+    limits: dict[str, list[dict[str, str]]] = {}
+    current: str | None = None
+    for line_number, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith(("//", "*", "$")):
+            continue
+        subckt = _SUBCKT_RE.match(raw)
+        if subckt:
+            current = subckt.group("name")
+            limits.setdefault(current, [])
+        else:
+            model = _MODEL_RE.match(raw)
+            if model:
+                current = model.group("name")
+                limits.setdefault(current, [])
+            elif re.match(r"^\s*(?:ends|\.ends|end\s+subckt)\b", raw, re.I):
+                current = None
+        if current is None:
+            continue
+        match = _MODEL_LIMIT_RE.match(raw)
+        if not match:
+            continue
+        limits[current].append({
+            "primitive": match.group("primitive"),
+            "left": match.group("left"),
+            "right": match.group("right"),
+            "key": match.group("key").lower(),
+            "value": match.group("value").strip("'\""),
+            "line": str(line_number),
+        })
+    return {name: values for name, values in limits.items() if values}
 
 
 def detect_model_soa(text: str) -> dict[str, object]:
@@ -280,6 +322,7 @@ def merge_devices(devices: Iterable[Device], rules: Iterable[Rule]) -> list[Devi
         if incoming.port_confidence == "confirmed":
             current.port_confidence = "confirmed"
         current.model_parameters.update(incoming.model_parameters)
+        current.model_limits.extend(item for item in incoming.model_limits if item not in current.model_limits)
         if incoming.parameter_confidence == "confirmed":
             current.parameter_confidence = "confirmed"
         if current.family_voltage is None:
