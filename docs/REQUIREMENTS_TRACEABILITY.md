@@ -21,12 +21,12 @@
 
 | 需求 | 记录位置 | 当前状态 |
 |---|---|---|
-| 按物理结构生成完整检查矩阵和 `not_applicable` | ADR 0007、PROJECT_PLAN | 待实现 |
-| 解析来源类别优先级拖动 | ADR 0007、GLOSSARY | 待实现 |
+| 按物理结构生成完整检查矩阵和 `not_applicable` | ADR 0007、PROJECT_PLAN | 基础候选已实现，完整适用性矩阵待实现 |
+| 解析来源类别优先级拖动 | ADR 0007、GLOSSARY | UI 和项目保存已实现 |
 | 冲突项目单独选择来源路线 | ADR 0007、GLOSSARY | 待实现 |
-| “生成推断值”按钮，填空但不自动启用 | ADR 0007、PROJECT_PLAN | 待实现 |
-| 规则摘要显示边界、来源和颜色提示 | PROJECT_PLAN | 待实现 |
-| 导出前可信度检查、上下跳转、强制导出审计 | ADR 0007、GLOSSARY | 待实现 |
+| “生成推断值”按钮，填空但不自动启用 | ADR 0007、PROJECT_PLAN | 已实现 |
+| 规则摘要显示边界、来源和颜色提示 | PROJECT_PLAN | 已实现基础版 |
+| 导出前可信度检查、上下跳转、强制导出审计 | ADR 0007、GLOSSARY | 已实现基础版 |
 | CDF/OA 终端顺序和参数表 | PROJECT_PLAN | 暂停，需 Virtuoso/OA API |
 
 ## 暂缓或有意不做

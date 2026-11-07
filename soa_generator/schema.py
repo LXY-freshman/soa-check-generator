@@ -20,6 +20,7 @@ def project_schema_document() -> dict[str, Any]:
             "generator": {"type": "object"},
             "process": {"type": "object", "required": ["path", "version"]},
             "adapter_config": {"type": ["object", "null"]},
+            "source_priority": {"type": "array"},
             "export_set": {"type": "object"},
             "devices": {"type": "array"},
             "sources": {"type": "array"},

@@ -132,6 +132,7 @@ def project_json(
     devices: Iterable[dict[str, object]] | None = None,
     sources: Iterable[dict[str, object]] | None = None,
     adapter: dict[str, object] | None = None,
+    source_priority: Iterable[str] | None = None,
 ) -> str:
     if adapter is not None:
         adapter_issues = validate_adapter_config(adapter)
@@ -143,6 +144,7 @@ def project_json(
         "generator": {"name": "soa-generator", "version": "0.1"},
         "process": {"path": process_path, "version": process_version, "adapter": adapter_metadata(adapter)},
         "adapter_config": adapter,
+        "source_priority": list(source_priority or []),
         "export_set": export_set.to_dict(),
         "devices": list(devices or []),
         "sources": list(sources or []),

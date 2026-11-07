@@ -232,8 +232,8 @@ def _candidate_from_dict(value: dict[str, Any]) -> CandidateFile:
 
 
 def _ssh_candidates(source: dict[str, Any], root: str) -> list[CandidateFile]:
-    pattern = "-iname '*.devicelist' -o -name device_list -o -iname '*soa*.mdl' -o -iname '*eSOA*.scs' -o -iname '*.Cat' -o -iname '*.Cat%'"
-    command = f"find {shlex.quote(root)} -type f \\( {pattern} \\) -printf '%s\\t%p\\n' | head -1000"
+    pattern = "-iname '*.devicelist' -o -name device_list -o -iname '*.mdl' -o -iname '*.scs' -o -iname '*.ckt' -o -iname '*.lib' -o -iname '*.biaschk' -o -iname '*.Cat' -o -iname '*.Cat%'"
+    command = f"find {shlex.quote(root)} -type f \\( {pattern} \\) -printf '%s\\t%p\\n' | head -2000"
     result = _ssh_run(source, command)
     candidates: list[CandidateFile] = []
     for line in result.stdout.splitlines():
@@ -647,6 +647,7 @@ class Handler(BaseHTTPRequestHandler):
                         devices=body.get("devices", []),
                         sources=body.get("sources", []),
                         adapter=body.get("adapter_config"),
+                        source_priority=body.get("source_priority", []),
                         extra={"export_audit": body.get("export_audit")} if body.get("export_audit") else None,
                     ) if "json" in export_set.formats else None,
                     "model_soa": model_metadata,
