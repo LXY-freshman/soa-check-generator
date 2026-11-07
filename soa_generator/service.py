@@ -268,7 +268,7 @@ def discover(source: dict[str, Any]) -> list[CandidateFile]:
     return discover_local(str(path))
 
 
-def parse_source(source: dict[str, Any], adapter_config: dict[str, Any] | None = None) -> dict[str, Any]:
+def parse_source(source: dict[str, Any], adapter_config: dict[str, Any] | None = None, source_priority: list[str] | None = None) -> dict[str, Any]:
     text = read_source(source)
     path = str(source["path"])
     lower = path.lower()
@@ -303,13 +303,14 @@ def parse_source(source: dict[str, Any], adapter_config: dict[str, Any] | None =
     return {
         "source": safe_source,
         "adapter": adapter_metadata(adapter_config),
+        "source_priority": list(source_priority or []),
         "devices": [item.to_dict() for item in devices],
         "rules": [item.to_dict() for item in rules],
         "summary": {"files": 1, "devices": len(devices), "rules": len(rules)},
     }
 
 
-def parse_text(text: str, path: str, adapter_config: dict[str, Any] | None = None) -> dict[str, Any]:
+def parse_text(text: str, path: str, adapter_config: dict[str, Any] | None = None, source_priority: list[str] | None = None) -> dict[str, Any]:
     lower = path.lower()
     if "devicelist" in lower or lower.endswith("device_list"):
         devices = parse_device_list(text, path)
@@ -341,6 +342,7 @@ def parse_text(text: str, path: str, adapter_config: dict[str, Any] | None = Non
     return {
         "source": {"kind": "browser_file", "path": path},
         "adapter": adapter_metadata(adapter_config),
+        "source_priority": list(source_priority or []),
         "devices": [item.to_dict() for item in devices],
         "rules": [item.to_dict() for item in rules],
         "file_results": [{
@@ -359,7 +361,7 @@ def parse_text(text: str, path: str, adapter_config: dict[str, Any] | None = Non
     }
 
 
-def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] | None = None) -> dict[str, Any]:
+def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] | None = None, source_priority: list[str] | None = None) -> dict[str, Any]:
     devices = []
     rules: list[Rule] = []
     seen_paths: set[str] = set()
@@ -459,6 +461,7 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
     return {
         "sources": safe_sources,
         "adapter": adapter_metadata(adapter_config),
+        "source_priority": list(source_priority or []),
         "devices": [item.to_dict() for item in devices],
         "rules": [item.to_dict() for item in rules],
         "file_results": file_results,
@@ -532,13 +535,13 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"summary": summarize_candidates(candidates), "candidates": [item.to_dict() for item in candidates]})
                 return
             if path == "/api/parse":
-                self._send_json(parse_source(body["source"], body.get("adapter_config")))
+                self._send_json(parse_source(body["source"], body.get("adapter_config"), body.get("source_priority")))
                 return
             if path == "/api/parse_text":
-                self._send_json(parse_text(str(body.get("text", "")), str(body.get("path", "browser-file")), body.get("adapter_config")))
+                self._send_json(parse_text(str(body.get("text", "")), str(body.get("path", "browser-file")), body.get("adapter_config"), body.get("source_priority")))
                 return
             if path == "/api/parse_sources":
-                self._send_json(parse_sources(body.get("sources", []), body.get("adapter_config")))
+                self._send_json(parse_sources(body.get("sources", []), body.get("adapter_config"), body.get("source_priority")))
                 return
             if path == "/api/parse_texts":
                 devices = []

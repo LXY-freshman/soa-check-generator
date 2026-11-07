@@ -27,6 +27,8 @@ endsection soa_hv
         self.assertEqual(rules[0].limit_kind, "Vds")
         self.assertEqual(rules[1].target_kind, "subs")
         self.assertEqual(rules[1].maximum, "1.98")
+        parsed = parse_text(text, "soa.scs", source_priority=["spectre_soa", "model_spectre", "inference"])
+        self.assertEqual(parsed["source_priority"][0], "spectre_soa")
 
     def test_matching_expression_min_and_max_are_one_rule(self) -> None:
         text = '''a assert sub=n50_ckt expr="v(d,b)" min=-5 message="Vbd" level=warning duration=t_trans_hv
