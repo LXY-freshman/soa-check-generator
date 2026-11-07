@@ -200,7 +200,8 @@ inline subckt mim_ckt (top bot)
         self.assertEqual(by_name["ndio18"]["minimum"], "-1.98")
         self.assertEqual(by_name["pvar18_ckt"]["limit_kind"], "terminal_voltage")
         self.assertTrue(all(not rule["enabled"] for rule in candidates))
-        self.assertNotIn("mim_ckt", by_name)
+        self.assertEqual(by_name["mim_ckt"]["status"], "missing")
+        self.assertIsNone(by_name["mim_ckt"]["maximum"])
 
     def test_non_mos_source_rule_wins_over_candidate(self) -> None:
         text = """simulator lang=spectre

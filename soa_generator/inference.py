@@ -87,6 +87,8 @@ def _candidate(
     reason: str,
     source_path: str,
     terminal_pair: list[str],
+    status: str = "inferred",
+    route: str = "inference",
 ) -> Rule:
     value_note = reason
     rule = Rule(
@@ -112,6 +114,8 @@ def _candidate(
             note=value_note,
         ),
         notes=[value_note, "非原生 SOA 候选，默认关闭；请用工艺手册、模型参数或实测数据确认后再启用。"],
+        status=status,
+        route=route,
     )
     rule.original = rule.to_dict()
     return rule
@@ -152,9 +156,12 @@ def non_mos_rule_candidates(
         reason: str
         limit_kind: str
         minimum: str | None = None
+        candidate_status = "inferred"
         if family == "resistor":
             value, reason = _named_resistor_limit(device, three_terminal_resistor)
             limit_kind = "resistor_substrate_voltage" if three_terminal_resistor else "resistor_terminal_voltage"
+            if value is None:
+                candidate_status = "missing"
         else:
             model_names = ("bv", "vb", "vbreakdown", "breakdown") if family in {"diode", "bjt", "esd_protection"} else ("bv_max", "vbreakdown", "breakdown")
             model_value = _numeric_parameter(device, model_names)
@@ -167,10 +174,12 @@ def non_mos_rule_candidates(
                 reason = f"{family} 缺少模型耐压参数，按器件族电压 {device.family_voltage:g} V 加 {margin:.0%} 经验裕量。"
                 limit_kind = "reverse_voltage" if family == "diode" else "terminal_voltage"
             else:
-                continue
-            minimum = f"{-value:g}"
-        if value is None:
-            continue
+                value = None
+                reason = f"{family} 没有模型耐压或器件族电压，保留空白端子检查等待用户填写。"
+                limit_kind = "reverse_voltage" if family == "diode" else "terminal_voltage"
+                candidate_status = "missing"
+            if value is not None:
+                minimum = f"{-value:g}"
         source = device.source.path if device.source else source_path
         pairs = [(left, right)]
         if family == "resistor" and limit_kind == "resistor_substrate_voltage" and len(device.ports) >= 3:
@@ -186,11 +195,13 @@ def non_mos_rule_candidates(
                     name=f"candidate_{device.name}_{limit_kind}_{pair_left}_{pair_right}",
                     expr=pair_expr,
                     limit_kind=limit_kind,
-                    maximum=f"{value:g}",
+                    maximum=f"{value:g}" if value is not None else None,
                     minimum=minimum,
                     reason=reason,
                     source_path=source,
                     terminal_pair=[pair_left, pair_right],
+                    status=candidate_status,
+                    route="inference" if candidate_status == "inferred" else "missing",
                 )
             )
     return candidates
@@ -253,9 +264,7 @@ def model_rule_candidates(
                 )
             )
             existing.add((device.name, expr.replace(" ", "").lower()))
-        if device.family not in {"mos", "ldmos", "demos"} or device.family_voltage is None:
-            continue
-        if device.source and device.source.mechanism == "model_internal" and not device.model_limits:
+        if device.family not in {"mos", "ldmos", "demos"}:
             continue
         ports = {port.lower(): port for port in device.ports}
         fallback_pairs = []
@@ -265,23 +274,38 @@ def model_rule_candidates(
             fallback_pairs.append((ports["g"], ports["s"], "Vgs"))
         if ports.get("b") and ports.get("s"):
             fallback_pairs.append((ports["b"], ports["s"], "Vbs"))
-        value = device.family_voltage * (1.0 + margin)
+        if ports.get("g") and ports.get("d"):
+            fallback_pairs.append((ports["g"], ports["d"], "Vgd"))
+        if ports.get("d") and ports.get("b"):
+            fallback_pairs.append((ports["d"], ports["b"], "Vbd"))
+        if ports.get("g") and ports.get("b"):
+            fallback_pairs.append((ports["g"], ports["b"], "Vgb"))
+        value = device.family_voltage * (1.0 + margin) if device.family_voltage is not None else None
         for left, right, limit_kind in fallback_pairs:
             expr = f"v({left},{right})"
             if (device.name, expr.replace(" ", "").lower()) in existing:
                 continue
-            reason = f"Spectre 模型未提供 {limit_kind} 数值上限，按器件族电压 {device.family_voltage:g} V 加 {margin:.0%} 裕量生成候选；这不是 SOA 曲线。"
+            if value is None:
+                reason = f"Spectre 模型未提供 {limit_kind} 数值上限，保留空白检查等待用户填写。"
+                status = "missing"
+                route = "missing"
+            else:
+                reason = f"Spectre 模型未提供 {limit_kind} 数值上限，按器件族电压 {device.family_voltage:g} V 加 {margin:.0%} 裕量生成候选；这不是 SOA 曲线。"
+                status = "inferred"
+                route = "inference"
             candidates.append(
                 _candidate(
                     device,
                     name=f"candidate_{device.name}_{limit_kind}_family_voltage",
                     expr=expr,
                     limit_kind=limit_kind,
-                    maximum=f"{value:g}",
-                    minimum=f"{-value:g}",
+                    maximum=f"{value:g}" if value is not None else None,
+                    minimum=f"{-value:g}" if value is not None else None,
                     reason=reason,
                     source_path=source,
                     terminal_pair=[left, right],
+                    status=status,
+                    route=route,
                 )
             )
             existing.add((device.name, expr.replace(" ", "").lower()))

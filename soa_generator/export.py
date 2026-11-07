@@ -59,11 +59,11 @@ def select_rules(rules: Iterable[Rule], export_set: ExportSet) -> list[Rule]:
     rules = list(rules)
     selected = set(export_set.rule_ids)
     if selected:
-        return [rule for rule in rules if rule.rule_id in selected and rule.effective("enabled")]
+        return [rule for rule in rules if rule.rule_id in selected and rule.effective("enabled") and rule.effective("status") not in {"missing", "not_applicable"}]
     if export_set.device_names:
         devices = set(export_set.device_names)
-        return [rule for rule in rules if rule.target in devices and rule.effective("enabled")]
-    return [rule for rule in rules if rule.effective("enabled")]
+        return [rule for rule in rules if rule.target in devices and rule.effective("enabled") and rule.effective("status") not in {"missing", "not_applicable"}]
+    return [rule for rule in rules if rule.effective("enabled") and rule.effective("status") not in {"missing", "not_applicable"}]
 
 
 def render_spectre(
@@ -92,7 +92,7 @@ def render_spectre(
             lines.append(f"// WARNING: {warning}")
     lines.extend(["", f"section {section}"])
     for rule in rules:
-        if not rule.effective("enabled"):
+        if not rule.effective("enabled") or rule.effective("status") in {"missing", "not_applicable"}:
             continue
         parts = [str(rule.effective("name")), "assert"]
         target_key = "subs" if rule.effective("target_kind") == "subs" else "sub"

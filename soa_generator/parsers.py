@@ -308,6 +308,8 @@ def topology_rule_candidates(
                 note=reason,
             ),
             notes=[reason, "候选规则默认关闭，请结合工艺手册或原生 SOA 文件确认后再启用。"],
+            status="inferred",
+            route="topology",
         )
         rule.original = rule.to_dict()
         candidates.append(rule)

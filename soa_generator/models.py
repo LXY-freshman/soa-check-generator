@@ -75,6 +75,8 @@ class Rule:
     original: dict[str, Any] | None = None
     override: dict[str, Any] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
+    status: str = "source"
+    route: str = "native"
 
     def effective(self, key: str) -> Any:
         if key in self.override:

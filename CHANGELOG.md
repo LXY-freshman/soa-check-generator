@@ -18,6 +18,7 @@
 - 提取模型中的 `bv_max`、`bv/vb`、`ibv`、`fv_max` 等安全参数，并让非 MOS 候选优先使用模型证据。
 - 对 Spectre MOS/LDMOS/DEMOS 子电路按端口和族电压生成 `Vds/Vgs/Vbs/Vbd` 候选，模型端口 `bv_max` 优先且自动去重。
 - 解析 Spectre subckt 父子依赖；父器件导出自动包含子规则，子器件仍保留独立目标和高级独立导出入口。
+- 增加基础物理检查矩阵候选、`missing/inferred` 状态、推断值填充入口和来源可信度检查入口；空值候选不会进入导出。
 
 ## Unreleased
 

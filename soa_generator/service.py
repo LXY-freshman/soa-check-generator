@@ -647,6 +647,7 @@ class Handler(BaseHTTPRequestHandler):
                         devices=body.get("devices", []),
                         sources=body.get("sources", []),
                         adapter=body.get("adapter_config"),
+                        extra={"export_audit": body.get("export_audit")} if body.get("export_audit") else None,
                     ) if "json" in export_set.formats else None,
                     "model_soa": model_metadata,
                 })
