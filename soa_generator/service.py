@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 from .discovery import CandidateFile, discover_local, summarize_candidates
 from .classify import apply_port_metadata, classify_device
-from .export import project_json, render_spectre, select_rules
+from .export import model_soa_export_metadata, project_json, render_spectre, select_rules
 from .models import ExportSet, Rule, SourceEvidence
 from .parsers import (
     merge_devices,
@@ -421,15 +421,25 @@ class Handler(BaseHTTPRequestHandler):
                     formats=export_data.get("formats", ["spectre", "json"]),
                 )
                 selected = select_rules(rules, export_set)
+                model_sources = body.get("model_sources", [])
+                model_soa_mode = str(body.get("model_soa_mode", "native"))
+                model_metadata = model_soa_export_metadata(model_sources, model_soa_mode)
                 self._send_json({
                     "count": len(selected),
-                    "spectre": render_spectre(selected) if "spectre" in export_set.formats else None,
+                    "spectre": render_spectre(
+                        selected,
+                        model_sources=model_sources,
+                        model_soa_mode=model_soa_mode,
+                    ) if "spectre" in export_set.formats else None,
                     "json": project_json(
                         process_path=str(body.get("process_path", "")),
                         process_version=body.get("process_version"),
                         rules=selected,
                         export_set=export_set,
+                        model_sources=model_sources,
+                        model_soa_mode=model_soa_mode,
                     ) if "json" in export_set.formats else None,
+                    "model_soa": model_metadata,
                 })
                 return
             if path == "/api/validate":

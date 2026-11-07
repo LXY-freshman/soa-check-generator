@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from soa_generator.classify import classify_device
-from soa_generator.export import ExportSet, render_spectre, select_rules
+from soa_generator.export import ExportSet, model_soa_export_metadata, project_json, render_spectre, select_rules
 from soa_generator.parsers import detect_model_soa, parse_device_list, parse_model_definitions, parse_spectre_asserts
 from soa_generator.service import parse_sources, parse_text
 from soa_generator.validation import lint_rules
@@ -109,6 +109,36 @@ rhrp_lc10k_3t_ckt
         result = detect_model_soa(internal)
         self.assertTrue(result["enabled"])
         self.assertEqual(result["mechanism"], "gsoa_bsource")
+
+    def test_model_soa_export_modes_are_explicit(self) -> None:
+        rules = parse_spectre_asserts('check assert sub=n50_ckt expr="V(d,s)" max=5')
+        sources = [{
+            "path": "/pdk/models/hvmos.mdl",
+            "kind": "model_spectre",
+            "model_internal_soa": True,
+            "model_soa_mechanism": "gsoa_bsource",
+            "model_soa_line": 42,
+        }]
+        native = render_spectre(rules, model_sources=sources, model_soa_mode="native")
+        self.assertIn('include "/pdk/models/hvmos.mdl"', native)
+        annotated = render_spectre(rules, model_sources=sources, model_soa_mode="annotate")
+        self.assertNotIn('include "/pdk/models/hvmos.mdl"', annotated)
+        self.assertIn("只记录模型内 SOA 来源", annotated)
+        metadata = model_soa_export_metadata(sources, "approximate")
+        self.assertEqual(metadata["sources"][0]["mechanism"], "gsoa_bsource")
+        self.assertIn("不能复现模型内 gsoa/soa_* 曲线", metadata["warnings"][0])
+        dual = render_spectre(rules, model_sources=sources, model_soa_mode="dual")
+        self.assertIn('include "/pdk/models/hvmos.mdl"', dual)
+        self.assertIn("可能产生重复告警", dual)
+        project = project_json(
+            process_path="/pdk",
+            process_version=None,
+            rules=rules,
+            export_set=ExportSet(formats=["json"]),
+            model_sources=sources,
+            model_soa_mode="native",
+        )
+        self.assertIn('"model_soa"', project)
 
 
 if __name__ == "__main__":
