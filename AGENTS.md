@@ -24,3 +24,5 @@ Read `docs/PROJECT_PLAN.md` before changing scope. Read `docs/DEVELOPMENT.md` be
 ## Completion
 
 A parser change is complete when its fixture, provenance behavior, duplicate handling, export behavior, and UI-facing JSON are tested. A schema or adapter change is complete when its validation endpoint, import/export round trip, and CLI/API path are tested.
+
+Rule edits use `Rule.override`; source evidence remains immutable provenance. Test export and quick-check paths after changing rule editing behavior.

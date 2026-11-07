@@ -59,11 +59,11 @@ def select_rules(rules: Iterable[Rule], export_set: ExportSet) -> list[Rule]:
     rules = list(rules)
     selected = set(export_set.rule_ids)
     if selected:
-        return [rule for rule in rules if rule.rule_id in selected and rule.enabled]
+        return [rule for rule in rules if rule.rule_id in selected and rule.effective("enabled")]
     if export_set.device_names:
         devices = set(export_set.device_names)
-        return [rule for rule in rules if rule.target in devices and rule.enabled]
-    return [rule for rule in rules if rule.enabled]
+        return [rule for rule in rules if rule.target in devices and rule.effective("enabled")]
+    return [rule for rule in rules if rule.effective("enabled")]
 
 
 def render_spectre(
@@ -92,23 +92,29 @@ def render_spectre(
             lines.append(f"// WARNING: {warning}")
     lines.extend(["", f"section {section}"])
     for rule in rules:
-        if not rule.enabled:
+        if not rule.effective("enabled"):
             continue
-        parts = [rule.name, "assert"]
-        target_key = "subs" if rule.target_kind == "subs" else "sub"
-        parts.append(f"{target_key}={rule.target}")
-        if rule.expr:
-            parts.append(f'expr="{rule.expr}"')
-        if rule.maximum is not None:
-            parts.append(f"max={rule.maximum}")
-        if rule.minimum is not None:
-            parts.append(f"min={rule.minimum}")
-        if rule.message:
-            parts.append(f'message="{rule.message}"')
-        if rule.level:
-            parts.append(f"level={rule.level}")
-        if rule.duration:
-            parts.append(f"duration={rule.duration}")
+        parts = [str(rule.effective("name")), "assert"]
+        target_key = "subs" if rule.effective("target_kind") == "subs" else "sub"
+        parts.append(f"{target_key}={rule.effective('target')}")
+        expr = rule.effective("expr")
+        maximum = rule.effective("maximum")
+        minimum = rule.effective("minimum")
+        message = rule.effective("message")
+        level = rule.effective("level")
+        duration = rule.effective("duration")
+        if expr:
+            parts.append(f'expr="{expr}"')
+        if maximum is not None and maximum != "":
+            parts.append(f"max={maximum}")
+        if minimum is not None and minimum != "":
+            parts.append(f"min={minimum}")
+        if message:
+            parts.append(f'message="{message}"')
+        if level:
+            parts.append(f"level={level}")
+        if duration:
+            parts.append(f"duration={duration}")
         lines.append(" ".join(parts))
     lines.extend([f"endsection {section}", ""])
     return "\n".join(lines)

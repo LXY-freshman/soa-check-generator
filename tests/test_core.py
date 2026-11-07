@@ -74,6 +74,15 @@ esd6_pnp_nbl
         self.assertIn("section soa_generated", rendered)
         self.assertIn("sub=n50_ckt", rendered)
 
+    def test_rule_override_is_used_for_export_and_lint(self) -> None:
+        rules = parse_spectre_asserts('check assert sub=n50_ckt expr="V(d,s)" max=5 level=warning')
+        rules[0].override = {"name": "check_user", "maximum": "4", "level": "error"}
+        rendered = render_spectre(rules)
+        self.assertIn("check_user assert", rendered)
+        self.assertIn("max=4", rendered)
+        self.assertIn("level=error", rendered)
+        self.assertFalse(any(issue.code == "invalid_level" for issue in lint_rules(rules, {"n50_ckt"})))
+
     def test_lint_reports_missing_check(self) -> None:
         rules = parse_spectre_asserts("bad assert sub=n50_ckt message=\"x\"")
         issues = lint_rules(rules, {"n50_ckt"})

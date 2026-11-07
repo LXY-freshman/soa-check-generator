@@ -13,6 +13,7 @@
 - 增加电阻、二极管、BJT、Varactor、MIM/MOM、ESD 类别规则候选；三端电阻分别生成端子对衬底检查，所有非原生候选默认关闭。
 - 增加本机/SSH Spectre 快速检查，解析临时主网表、SOA section 和 Spectre 日志，并将语法、目标器件和规则参数问题显示在界面中。
 - 增加 `soa-project/v1` 项目 schema、项目校验 API，以及 `soa-adapter/v1` 工艺适配器配置；网页和 CLI 可保存/加载适配器元数据。
+- 完善用户规则生命周期：重命名、复制、删除、恢复来源、编辑备注；覆盖值会进入 Spectre、快速检查和项目 JSON。
 
 ## Unreleased
 

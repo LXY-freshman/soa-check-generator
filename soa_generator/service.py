@@ -437,12 +437,16 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
 
 
 def _rule_from_dict(value: dict[str, Any]) -> Rule:
-    source = value.get("source")
     value = dict(value)
-    value.pop("source", None)
-    value.pop("original", None)
-    value.pop("override", None)
-    value.pop("notes", None)
+    source = value.get("source")
+    if isinstance(source, dict):
+        source_fields = {key: source.get(key) for key in SourceEvidence.__dataclass_fields__ if key in source}
+        value["source"] = SourceEvidence(**source_fields)
+    else:
+        value["source"] = None
+    value["original"] = value.get("original")
+    value["override"] = dict(value.get("override") or {})
+    value["notes"] = list(value.get("notes") or [])
     return Rule(**{key: value[key] for key in Rule.__dataclass_fields__ if key in value})
 
 
