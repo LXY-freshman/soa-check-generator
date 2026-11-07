@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 from .discovery import CandidateFile, discover_local, summarize_candidates
 from .classify import apply_port_metadata, classify_device
 from .export import model_soa_export_metadata, project_json, render_spectre, select_rules
+from .inference import non_mos_rule_candidates
 from .models import ExportSet, Rule, SourceEvidence
 from .parsers import (
     merge_devices,
@@ -156,6 +157,7 @@ def parse_source(source: dict[str, Any]) -> dict[str, Any]:
     devices = merge_devices(devices, rules)
     candidates = topology_rule_candidates(devices, rules, path)
     rules.extend(candidates)
+    rules.extend(non_mos_rule_candidates(devices, rules, path))
     devices = merge_devices(devices, rules)
     safe_source = {key: value for key, value in source.items() if key != "password"}
     return {
@@ -174,6 +176,7 @@ def parse_text(text: str, path: str) -> dict[str, Any]:
     else:
         rules = parse_spectre_asserts(text, path)
         devices = []
+    source_rule_count = len(rules)
     for name, ports, line in parse_model_definitions(text):
         device = classify_device(name, "model")
         apply_port_metadata(device, ports)
@@ -181,6 +184,7 @@ def parse_text(text: str, path: str) -> dict[str, Any]:
         devices.append(device)
     devices = merge_devices(devices, rules)
     rules.extend(topology_rule_candidates(devices, rules, path))
+    rules.extend(non_mos_rule_candidates(devices, rules, path))
     devices = merge_devices(devices, rules)
     model_soa = detect_model_soa(text)
     return {
@@ -190,9 +194,9 @@ def parse_text(text: str, path: str) -> dict[str, Any]:
         "file_results": [{
             "path": path,
             "kind": "device_list" if "devicelist" in lower or lower.endswith("device_list") else "model_spectre",
-            "role": "规则源" if rules and not any(rule.confidence == "inferred" for rule in rules) else "器件资料",
-            "status": "已识别模型内 SOA" if model_soa["enabled"] and not rules else "已提取规则" if rules else "已识别器件/端口" if devices else "已读取，等待专用抽取器",
-            "rule_count": len(rules),
+            "role": "规则源" if source_rule_count else "器件资料",
+            "status": "已识别模型内 SOA" if model_soa["enabled"] and not source_rule_count else "已提取规则" if source_rule_count else "已识别器件/端口" if devices else "已读取，等待专用抽取器",
+            "rule_count": source_rule_count,
             "device_count": len(devices),
             "model_internal_soa": model_soa["enabled"],
             "model_soa_mechanism": model_soa["mechanism"],
@@ -261,6 +265,9 @@ def parse_sources(sources: list[dict[str, Any]]) -> dict[str, Any]:
         file_results.append(file_result)
         evidence.append(file_result)
     devices = merge_devices(devices, rules)
+    non_mos = non_mos_rule_candidates(devices, rules)
+    rules.extend(non_mos)
+    devices = merge_devices(devices, rules)
     for device in devices:
         related = [item for item in evidence if device.name in item.get("model_names", [])]
         if device.source:
@@ -285,7 +292,7 @@ def parse_sources(sources: list[dict[str, Any]]) -> dict[str, Any]:
         "rules": [item.to_dict() for item in rules],
         "file_results": file_results,
         "evidence": evidence,
-        "summary": {"files": len(seen_paths), "devices": len(devices), "rules": len(rules), "evidence": len(evidence)},
+        "summary": {"files": len(seen_paths), "devices": len(devices), "rules": len(rules), "inferred_rules": len(non_mos), "evidence": len(evidence)},
     }
 
 
@@ -408,7 +415,10 @@ class Handler(BaseHTTPRequestHandler):
                             seen_rules.add(key)
                             rules.append(rule)
                 devices = merge_devices(devices, rules)
-                self._send_json({"devices": [item.to_dict() for item in devices], "rules": [item.to_dict() for item in rules], "file_results": file_results, "summary": {"files": len(body.get("files", [])), "devices": len(devices), "rules": len(rules)}})
+                non_mos = non_mos_rule_candidates(devices, rules)
+                rules.extend(non_mos)
+                devices = merge_devices(devices, rules)
+                self._send_json({"devices": [item.to_dict() for item in devices], "rules": [item.to_dict() for item in rules], "file_results": file_results, "summary": {"files": len(body.get("files", [])), "devices": len(devices), "rules": len(rules), "inferred_rules": len(non_mos)}})
                 return
             if path == "/api/export":
                 rules = [_rule_from_dict(value) for value in body.get("rules", [])]

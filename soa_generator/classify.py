@@ -10,11 +10,12 @@ _ISO_VOLTAGE = re.compile(r"(?:iso|isoring|hvbn|hvnwell|dpw|ddnw)[_-]?(\d+)(?:v)
 _NBL_ISO_VOLTAGE = re.compile(r"(?:nbl|hvnwell|dpw)[_-](\d+)v(?:_|$)", re.I)
 _DESCRIPTOR_VOLTAGE = re.compile(r"^[np](?:ch|mos)(\d+)d(\d+)", re.I)
 _TEXT_VOLTAGE = re.compile(r"(?:^|_)(\d+)p(\d+)v(?:_|$)", re.I)
+_NAMED_VOLTAGE = re.compile(r"(\d+(?:\.\d+)?)v(?:_|$)", re.I)
 _VOLTAGE_PAIR = re.compile(r"\bv\s*\(\s*([^,\s()]+)\s*,\s*([^,\s()]+)\s*\)", re.I)
 
 
-def classify_family(name: str) -> str:
-    value = name.lower()
+def classify_family(name: str, category: str = "") -> str:
+    value = f"{name} {category}".lower()
     if any(token in value for token in ("cap", "mim", "mom")):
         return "capacitor"
     if any(token in value for token in ("var", "varactor")):
@@ -42,7 +43,7 @@ def classify_scope(name: str, category: str = "") -> str:
         return "infrastructure"
     if any(token in value for token in ("esd", "scr", "efuse", "eprom", "eeprom")):
         return "esd_protection"
-    if classify_family(name) in {"resistor", "diode", "bjt", "varactor", "capacitor"}:
+    if classify_family(name, category) in {"resistor", "diode", "bjt", "varactor", "capacitor"}:
         return "passive"
     return "active"
 
@@ -98,6 +99,21 @@ def apply_port_metadata(device: Device, ports: list[str]) -> Device:
 
 def family_voltage(name: str) -> float | None:
     value = name.lower()
+    for pattern in (
+        r"^[np]var(\d+)",
+        r"^(?:pnp|npn)(\d+)",
+        r"^[np]dio(\d+)",
+        r"^n(\d+)npb",
+        r"^sdmte(\d+)",
+        r"^mom(\d+)",
+        r"^esd(\d+)",
+    ):
+        match = re.match(pattern, value)
+        if match:
+            number = int(match.group(1))
+            if pattern in {r"^[np]var(\d+)", r"^(?:pnp|npn)(\d+)", r"^[np]dio(\d+)", r"^n(\d+)npb"}:
+                return {18: 1.8, 50: 5.0, 60: 6.0}.get(number, float(number))
+            return float(number)
     descriptor_match = _DESCRIPTOR_VOLTAGE.match(value)
     if descriptor_match:
         return float(f"{descriptor_match.group(1)}.{descriptor_match.group(2)}")
@@ -105,13 +121,14 @@ def family_voltage(name: str) -> float | None:
     if text_match:
         return float(f"{text_match.group(1)}.{text_match.group(2)}")
     match = _VOLTAGE_AFTER_FAMILY.match(value)
-    if not match:
-        return None
-    number = int(match.group(1))
-    # SMIC-style LV/MV MOS names use 18/50/60 for 1.8/5/6 V.
-    if re.match(r"^(?:n|p)(?:nt|lvt|ulvt|udvt|dvt)?\d", value) and not value.startswith(("nld", "pld", "nde", "pde")):
-        return {18: 1.8, 50: 5.0, 60: 6.0}.get(number, float(number))
-    return float(number)
+    if match:
+        number = int(match.group(1))
+        # SMIC-style LV/MV MOS names use 18/50/60 for 1.8/5/6 V.
+        if re.match(r"^(?:n|p)(?:nt|lvt|ulvt|udvt|dvt)?\d", value) and not value.startswith(("nld", "pld", "nde", "pde")):
+            return {18: 1.8, 50: 5.0, 60: 6.0}.get(number, float(number))
+        return float(number)
+    named = _NAMED_VOLTAGE.search(value)
+    return float(named.group(1)) if named else None
 
 
 def isolation_voltage(name: str) -> float | None:
@@ -121,7 +138,7 @@ def isolation_voltage(name: str) -> float | None:
 
 
 def classify_device(name: str, category: str = "") -> Device:
-    family = classify_family(name)
+    family = classify_family(name, category)
     iso = isolation_voltage(name)
     return Device(
         name=name,

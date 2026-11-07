@@ -39,12 +39,16 @@ b assert sub=n50_ckt expr="v(d,b)" max=5 message="Vbd" level=warning duration=t_
 n50_ckt
 ****** Resistor ********
 rhrp_lc10k_3t_ckt
+****** ESD PNP ********
+esd6_pnp_nbl
 """
         devices = parse_device_list(text, "devices.devicelist")
-        self.assertEqual([device.name for device in devices], ["n50_ckt", "rhrp_lc10k_3t_ckt"])
+        self.assertEqual([device.name for device in devices], ["n50_ckt", "rhrp_lc10k_3t_ckt", "esd6_pnp_nbl"])
         self.assertEqual(devices[0].family, "mos")
         self.assertEqual(devices[0].family_voltage, 5.0)
         self.assertEqual(devices[1].family, "resistor")
+        self.assertEqual(devices[2].family, "bjt")
+        self.assertEqual(devices[2].scope, "esd_protection")
 
     def test_voltage_name_conventions(self) -> None:
         self.assertEqual(classify_device("n18_ckt").family_voltage, 1.8)
@@ -52,8 +56,11 @@ rhrp_lc10k_3t_ckt
         self.assertEqual(classify_device("nld12_iso_ckt").family_voltage, 12.0)
         self.assertEqual(classify_device("nch_svt_1p8v").family_voltage, 1.8)
         iso = classify_device("n50_hvbn_30v_ckt")
+        self.assertEqual(iso.family_voltage, 5.0)
         self.assertEqual(iso.isolation_voltage, 30.0)
         self.assertEqual(iso.isolation_confidence, "inferred")
+        self.assertEqual(classify_device("rnwaa5v_ckt").family_voltage, 5.0)
+        self.assertEqual(classify_device("pnp18").family_voltage, 1.8)
 
     def test_combined_export_selects_devices_and_renders_section(self) -> None:
         rules = parse_spectre_asserts('check assert sub=n50_ckt expr="V(d,s)" max=5')
@@ -109,6 +116,38 @@ rhrp_lc10k_3t_ckt
         result = detect_model_soa(internal)
         self.assertTrue(result["enabled"])
         self.assertEqual(result["mechanism"], "gsoa_bsource")
+
+    def test_non_mos_candidates_are_disabled_and_category_specific(self) -> None:
+        text = """simulator lang=spectre
+inline subckt rhrp_hv_3t_ckt (in out sx)
+inline subckt rhrp_3k_mac (in out sx)
+inline subckt rnpo_3t_ckt (in out sx)
+inline subckt ndio18 (p n)
+inline subckt pvar18_ckt (p n)
+inline subckt mim_ckt (top bot)
+"""
+        payload = parse_text(text, "passive_models.scs")
+        candidates = [rule for rule in payload["rules"] if rule["confidence"] == "inferred"]
+        by_name = {rule["target"]: rule for rule in candidates}
+        self.assertEqual(by_name["rhrp_hv_3t_ckt"]["maximum"], "120")
+        self.assertEqual(by_name["rhrp_3k_mac"]["maximum"], "30")
+        self.assertEqual(by_name["rnpo_3t_ckt"]["maximum"], "30")
+        self.assertEqual(by_name["ndio18"]["maximum"], "1.98")
+        self.assertEqual(by_name["ndio18"]["minimum"], "-1.98")
+        self.assertEqual(by_name["pvar18_ckt"]["limit_kind"], "terminal_voltage")
+        self.assertTrue(all(not rule["enabled"] for rule in candidates))
+        self.assertNotIn("mim_ckt", by_name)
+
+    def test_non_mos_source_rule_wins_over_candidate(self) -> None:
+        text = """simulator lang=spectre
+inline subckt ndio18 (p n)
+source_diode assert sub=ndio18 expr="V(p,n)" max=2
+"""
+        payload = parse_text(text, "diode.scs")
+        rules = [rule for rule in payload["rules"] if rule["target"] == "ndio18"]
+        self.assertEqual(len(rules), 1)
+        self.assertEqual(rules[0]["confidence"], "confirmed")
+        self.assertEqual(rules[0]["maximum"], "2")
 
     def test_model_soa_export_modes_are_explicit(self) -> None:
         rules = parse_spectre_asserts('check assert sub=n50_ckt expr="V(d,s)" max=5')

@@ -61,7 +61,7 @@
     const state={source:null,candidates:[],devices:[],rules:[],fileResults:[],selectedDevice:null,lastSpectre:'',lastJson:'',browserFiles:[]};
     const $=id=>document.getElementById(id);const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const familyLabels={mos:'MOS/CMOS',ldmos:'LDMOS',demos:'DEMOS',resistor:'电阻',diode:'二极管',bjt:'BJT',capacitor:'电容',varactor:'Varactor',esd_protection:'ESD/保护',unknown:'其他'};
-    const limitLabels={Vds:'漏源/漏体电压',Vgs:'栅源电压',Vbs:'体源电压',Vgb:'栅体电压',Vbd:'漏体电压',isolation_bv:'隔离环耐压',temperature:'温度',current_density:'电流密度',other:'其他条件'};
+    const limitLabels={Vds:'漏源/漏体电压',Vgs:'栅源电压',Vbs:'体源电压',Vgb:'栅体电压',Vbd:'漏体电压',isolation_bv:'隔离环耐压',reverse_voltage:'反向耐压',terminal_voltage:'端子耐压',resistor_terminal_voltage:'电阻端子电压',resistor_substrate_voltage:'电阻对衬底电压',temperature:'温度',current_density:'电流密度',other:'其他条件'};
     const confidenceLabels={confirmed:'源文件已确认',documented:'手册已记录',inferred:'推断，待确认',conflict:'来源冲突',missing:'缺少来源'};
     function showError(e){$('error').textContent=e?.message||String(e);}
     function source(){return {kind:$('kind').value,host:$('host').value.trim(),user:$('user').value.trim(),port:$('port').value.trim(),password:$('password').value,path:$('path').value.trim()};}
