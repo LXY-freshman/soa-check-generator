@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import mimetypes
 import os
 import shlex
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -32,6 +34,129 @@ from .validation import lint_rules
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB_ROOT = ROOT / "web"
+
+
+def _spectre_diagnostics(output: str, exit_code: int) -> list[dict[str, object]]:
+    """Convert Spectre's human log into compact UI issues."""
+    issues: list[dict[str, object]] = []
+    lines = output.splitlines()
+    seen: set[tuple[str, str]] = set()
+    for raw in lines:
+        line = raw.strip()
+        upper = line.upper()
+        if "ERROR (" in upper or "FATAL (" in upper:
+            severity = "error"
+        elif "WARNING (" in upper:
+            severity = "warning"
+        else:
+            continue
+        message = line
+        code_match = re.search(r"\(([A-Z][A-Z0-9-]+)\)", line) or re.search(r"\b([A-Z][A-Z0-9-]+)\b", line)
+        code = f"spectre_{code_match.group(1).lower()}" if code_match else "spectre_diagnostic"
+        key = (severity, message)
+        if key in seen:
+            continue
+        seen.add(key)
+        issues.append({
+            "severity": severity,
+            "code": code,
+            "message": message[:600],
+        })
+    if exit_code != 0 and not any(item["severity"] == "error" for item in issues):
+        issues.insert(0, {
+            "severity": "error",
+            "code": "spectre_exit",
+            "message": f"Spectre 退出码为 {exit_code}，请查看后续诊断信息。",
+        })
+    return issues
+
+
+def _quick_check_main(library_name: str, section: str = "soa_generated") -> str:
+    return "\n".join([
+        "simulator lang=spectre",
+        f'include "{library_name}" section={section}',
+        "",
+    ])
+
+
+def _run_local_spectre_check(library_text: str, *, spectre_path: str | None = None) -> tuple[int, str]:
+    executable = spectre_path or os.environ.get("SPECTRE_BIN") or shutil.which("spectre")
+    if not executable:
+        raise RuntimeError("本机找不到 spectre；请设置 SPECTRE_BIN，或改用 SSH 快速检查。")
+    with tempfile.TemporaryDirectory(prefix="soa-spectre-check-") as temp_dir:
+        root = Path(temp_dir)
+        library = root / "soa_generated.scs"
+        main = root / "main.scs"
+        log = root / "run.log"
+        raw = root / "raw"
+        library.write_text(library_text, encoding="utf-8")
+        main.write_text(_quick_check_main(str(library)), encoding="utf-8")
+        result = subprocess.run(
+            [executable, "+log", str(log), "-raw", str(raw), str(main)],
+            capture_output=True,
+            text=True,
+            timeout=90,
+            check=False,
+        )
+        output = "\n".join(value for value in (result.stdout, result.stderr, log.read_text(encoding="utf-8", errors="replace") if log.exists() else "") if value)
+        return result.returncode, output
+
+
+def _run_remote_spectre_check(source: dict[str, Any], library_text: str) -> tuple[int, str]:
+    temp_name = f"/tmp/soa-spectre-check-{os.getpid()}"
+    library_encoded = base64.b64encode(library_text.encode("utf-8")).decode("ascii")
+    main_text = _quick_check_main(f"{temp_name}/soa_generated.scs")
+    main_encoded = base64.b64encode(main_text.encode("utf-8")).decode("ascii")
+    command = "; ".join([
+        f"rm -rf {shlex.quote(temp_name)}",
+        f"mkdir -p {shlex.quote(temp_name)}",
+        f"printf %s {shlex.quote(library_encoded)} | base64 -d > {shlex.quote(temp_name + '/soa_generated.scs')}",
+        f"printf %s {shlex.quote(main_encoded)} | base64 -d > {shlex.quote(temp_name + '/main.scs')}",
+        f"spectre +log {shlex.quote(temp_name + '/run.log')} -raw {shlex.quote(temp_name + '/raw')} {shlex.quote(temp_name + '/main.scs')} >/dev/null 2>&1",
+        "status=$?",
+        f"cat {shlex.quote(temp_name + '/run.log')} 2>/dev/null",
+        f"printf '\\n__SOA_SPECTRE_STATUS__=%s\\n' \"$status\"",
+        f"rm -rf {shlex.quote(temp_name)}",
+        "exit 0",
+    ])
+    result = _ssh_run(source, command)
+    match = re.search(r"__SOA_SPECTRE_STATUS__=(\d+)", result.stdout)
+    if not match:
+        raise RuntimeError("远程 Spectre 没有返回可识别的退出状态。")
+    output = re.sub(r"\n__SOA_SPECTRE_STATUS__=\d+\s*$", "", result.stdout)
+    return int(match.group(1)), output
+
+
+def quick_check(
+    rules: list[Rule],
+    devices: list[str],
+    runner: dict[str, Any],
+    *,
+    model_sources: list[dict[str, Any]] | None = None,
+    model_soa_mode: str = "annotate",
+) -> dict[str, Any]:
+    static = lint_rules(rules, known_devices=set(devices) or None)
+    spectre_text = render_spectre(
+        rules,
+        model_sources=model_sources or [],
+        model_soa_mode=model_soa_mode,
+    )
+    kind = str(runner.get("kind", "local"))
+    if kind == "ssh":
+        exit_code, output = _run_remote_spectre_check(runner, spectre_text)
+        runner_label = "SSH 远程 Spectre"
+    else:
+        exit_code, output = _run_local_spectre_check(spectre_text, spectre_path=runner.get("spectre_path"))
+        runner_label = "本机 Spectre"
+    runtime = _spectre_diagnostics(output, exit_code)
+    issues = [item.to_dict() for item in static] + runtime
+    return {
+        "ok": not any(item.get("severity") == "error" for item in issues),
+        "runner": runner_label,
+        "exit_code": exit_code,
+        "issues": issues,
+        "output_tail": output[-6000:],
+    }
 
 
 def _read_local(path: str) -> str:
@@ -457,6 +582,17 @@ class Handler(BaseHTTPRequestHandler):
                 known = set(body.get("devices", [])) or None
                 issues = lint_rules(rules, known_devices=known)
                 self._send_json({"ok": not any(item.severity == "error" for item in issues), "issues": [item.to_dict() for item in issues]})
+                return
+            if path == "/api/quick_check":
+                rules = [_rule_from_dict(value) for value in body.get("rules", [])]
+                result = quick_check(
+                    rules,
+                    [str(value) for value in body.get("devices", [])],
+                    body.get("runner", {}),
+                    model_sources=body.get("model_sources", []),
+                    model_soa_mode=str(body.get("model_soa_mode", "annotate")),
+                )
+                self._send_json(result)
                 return
             self.send_error(404)
         except Exception as exc:  # service boundary: return readable UI error

@@ -5,7 +5,7 @@ from pathlib import Path
 from soa_generator.classify import classify_device
 from soa_generator.export import ExportSet, model_soa_export_metadata, project_json, render_spectre, select_rules
 from soa_generator.parsers import detect_model_soa, parse_device_list, parse_model_definitions, parse_spectre_asserts
-from soa_generator.service import parse_sources, parse_text
+from soa_generator.service import _spectre_diagnostics, parse_sources, parse_text
 from soa_generator.validation import lint_rules
 
 
@@ -148,6 +148,17 @@ source_diode assert sub=ndio18 expr="V(p,n)" max=2
         self.assertEqual(len(rules), 1)
         self.assertEqual(rules[0]["confidence"], "confirmed")
         self.assertEqual(rules[0]["maximum"], "2")
+
+    def test_spectre_diagnostics_are_compact_and_readable(self) -> None:
+        output = """Error found by spectre during circuit read-in.
+ERROR (SFE-874): \"/tmp/main.scs\" 4: syntax error.
+Warning from spectre during initial setup.
+WARNING (SPECTRE-17607): Assert `check' is ignored.
+"""
+        issues = _spectre_diagnostics(output, 2)
+        self.assertEqual(issues[0]["severity"], "error")
+        self.assertIn("spectre_sfe-874", issues[0]["code"])
+        self.assertTrue(any(item["severity"] == "warning" for item in issues))
 
     def test_model_soa_export_modes_are_explicit(self) -> None:
         rules = parse_spectre_asserts('check assert sub=n50_ckt expr="V(d,s)" max=5')
