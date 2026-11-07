@@ -15,10 +15,16 @@ from typing import Any
 from urllib.parse import urlparse
 
 from .discovery import CandidateFile, discover_local, summarize_candidates
-from .classify import classify_device
+from .classify import apply_port_metadata, classify_device
 from .export import project_json, render_spectre, select_rules
-from .models import ExportSet, Rule
-from .parsers import merge_devices, parse_device_list, parse_spectre_asserts
+from .models import ExportSet, Rule, SourceEvidence
+from .parsers import (
+    merge_devices,
+    parse_device_list,
+    parse_model_definitions,
+    parse_spectre_asserts,
+    topology_rule_candidates,
+)
 from .validation import lint_rules
 
 
@@ -140,13 +146,22 @@ def parse_source(source: dict[str, Any]) -> dict[str, Any]:
     else:
         rules = parse_spectre_asserts(text, path)
         devices = []
+    definitions = parse_model_definitions(text)
+    for name, ports, line in definitions:
+        device = classify_device(name, "model")
+        apply_port_metadata(device, ports)
+        device.source = SourceEvidence(path=path, line=line, mechanism="unknown", note="模型定义")
+        devices.append(device)
+    devices = merge_devices(devices, rules)
+    candidates = topology_rule_candidates(devices, rules, path)
+    rules.extend(candidates)
     devices = merge_devices(devices, rules)
     safe_source = {key: value for key, value in source.items() if key != "password"}
     return {
         "source": safe_source,
         "devices": [item.to_dict() for item in devices],
         "rules": [item.to_dict() for item in rules],
-        "summary": {"devices": len(devices), "rules": len(rules)},
+        "summary": {"files": 1, "devices": len(devices), "rules": len(rules)},
     }
 
 
@@ -158,12 +173,19 @@ def parse_text(text: str, path: str) -> dict[str, Any]:
     else:
         rules = parse_spectre_asserts(text, path)
         devices = []
+    for name, ports, line in parse_model_definitions(text):
+        device = classify_device(name, "model")
+        apply_port_metadata(device, ports)
+        device.source = SourceEvidence(path=path, line=line, mechanism="unknown", note="模型定义")
+        devices.append(device)
+    devices = merge_devices(devices, rules)
+    rules.extend(topology_rule_candidates(devices, rules, path))
     devices = merge_devices(devices, rules)
     return {
         "source": {"kind": "browser_file", "path": path},
         "devices": [item.to_dict() for item in devices],
         "rules": [item.to_dict() for item in rules],
-        "summary": {"devices": len(devices), "rules": len(rules)},
+        "summary": {"files": 1, "devices": len(devices), "rules": len(rules)},
     }
 
 
@@ -191,19 +213,36 @@ def parse_sources(sources: list[dict[str, Any]]) -> dict[str, Any]:
             if key not in seen_rules:
                 seen_rules.add(key)
                 rules.append(rule)
-        model_names = sorted(set(re.findall(r"(?im)^\s*(?:subckt|model)\s+([A-Za-z_][A-Za-z0-9_]*)", text)))
-        subckt_ports = {
-            name: ports.split()
-            for name, ports in re.findall(r"(?im)^\s*subckt\s+([A-Za-z_][A-Za-z0-9_]*)\s+([^\n]+)", text)
-        }
-        for name in model_names:
-            device = classify_device(name, "model")
-            device.ports = subckt_ports.get(name, [])
-            devices.append(device)
+        definitions = parse_model_definitions(text)
+        definition_map: dict[str, tuple[list[str], int]] = {}
+        for name, ports, line in definitions:
+            previous = definition_map.get(name)
+            if previous is None or (not previous[0] and ports):
+                definition_map[name] = (ports, line)
+        model_names = sorted(definition_map)
         has_model_soa = bool(re.search(r"(?i)\b(?:gsoa|bsource|soa_[a-z0-9_]+)\b", text))
+        source_devices: list[Any] = []
+        for name in model_names:
+            ports, line = definition_map[name]
+            device = classify_device(name, "model")
+            apply_port_metadata(device, ports)
+            device.source = SourceEvidence(
+                path=path,
+                line=line,
+                mechanism="model_internal" if has_model_soa else "unknown",
+                note="模型定义" + ("；检测到模型内部 SOA 线索" if has_model_soa else ""),
+            )
+            source_devices.append(device)
+            devices.append(device)
+        candidates = topology_rule_candidates(source_devices, [*rules, *parsed_rules], path)
+        for rule in candidates:
+            key = (rule.target, rule.name, rule.expr, rule.maximum, rule.minimum)
+            if key not in seen_rules:
+                seen_rules.add(key)
+                rules.append(rule)
         role = "规则源" if parsed_rules else "器件资料" if parsed_devices or model_names else "文档/证据"
-        status = "已提取规则" if parsed_rules else "已识别器件/模型" if parsed_devices or model_names else "已读取，等待专用抽取器"
-        file_result = {"path": path, "kind": kind or "unknown", "role": role, "status": status, "rule_count": len(parsed_rules), "device_count": len(parsed_devices), "model_count": len(model_names), "model_names": model_names[:100], "model_internal_soa": has_model_soa}
+        status = "已提取规则" if parsed_rules else "已识别器件/端口" if parsed_devices or model_names else "已读取，等待专用抽取器"
+        file_result = {"path": path, "kind": kind or "unknown", "role": role, "status": status, "rule_count": len(parsed_rules), "device_count": len(parsed_devices), "model_count": len(model_names), "port_device_count": sum(bool(ports) for ports, _line in definition_map.values()), "topology_rule_count": len(candidates), "model_names": model_names[:100], "model_internal_soa": has_model_soa}
         file_results.append(file_result)
         evidence.append(file_result)
     devices = merge_devices(devices, rules)
@@ -211,8 +250,18 @@ def parse_sources(sources: list[dict[str, Any]]) -> dict[str, Any]:
         related = [item for item in evidence if device.name in item.get("model_names", [])]
         if device.source:
             related.append({"path": device.source.path, "role": "器件资料", "status": "已识别器件"})
-        rule_sources = sorted({rule.source.path for rule in rules if rule.target == device.name and rule.source})
-        related.extend({"path": path, "role": "规则源", "status": "已提取 SOA 规则"} for path in rule_sources)
+        rule_sources: dict[str, bool] = {}
+        for rule in rules:
+            if rule.target == device.name and rule.source:
+                rule_sources[rule.source.path] = rule_sources.get(rule.source.path, False) or rule.confidence == "inferred"
+        related.extend(
+            {
+                "path": path,
+                "role": "推断候选" if inferred else "规则源",
+                "status": "待确认后启用" if inferred else "已提取 SOA 规则",
+            }
+            for path, inferred in sorted(rule_sources.items())
+        )
         device.evidence = related
     safe_sources = [{key: value for key, value in source.items() if key != "password"} for source in sources]
     return {
@@ -297,14 +346,27 @@ class Handler(BaseHTTPRequestHandler):
                 seen_rules: set[tuple[str, str, str, str | None, str | None]] = set()
                 for item in body.get("files", []):
                     path_value = str(item.get("path", "browser-file"))
+                    text_value = str(item.get("text", ""))
                     if item.get("kind") == "device_list" or path_value.lower().endswith((".devicelist", "device_list")):
-                        devices.extend(parse_device_list(str(item.get("text", "")), path_value))
+                        devices.extend(parse_device_list(text_value, path_value))
                     else:
-                        for rule in parse_spectre_asserts(str(item.get("text", "")), path_value):
+                        for rule in parse_spectre_asserts(text_value, path_value):
                             key = (rule.target, rule.name, rule.expr, rule.maximum, rule.minimum)
                             if key not in seen_rules:
                                 seen_rules.add(key)
                                 rules.append(rule)
+                    model_devices: list[Any] = []
+                    for name, ports, line in parse_model_definitions(text_value):
+                        device = classify_device(name, "model")
+                        apply_port_metadata(device, ports)
+                        device.source = SourceEvidence(path=path_value, line=line, mechanism="unknown", note="模型定义")
+                        model_devices.append(device)
+                        devices.append(device)
+                    for rule in topology_rule_candidates(model_devices, rules, path_value):
+                        key = (rule.target, rule.name, rule.expr, rule.maximum, rule.minimum)
+                        if key not in seen_rules:
+                            seen_rules.add(key)
+                            rules.append(rule)
                 devices = merge_devices(devices, rules)
                 self._send_json({"devices": [item.to_dict() for item in devices], "rules": [item.to_dict() for item in rules], "summary": {"files": len(body.get("files", [])), "devices": len(devices), "rules": len(rules)}})
                 return

@@ -4,8 +4,8 @@ from pathlib import Path
 
 from soa_generator.classify import classify_device
 from soa_generator.export import ExportSet, render_spectre, select_rules
-from soa_generator.parsers import parse_device_list, parse_spectre_asserts
-from soa_generator.service import parse_sources
+from soa_generator.parsers import parse_device_list, parse_model_definitions, parse_spectre_asserts
+from soa_generator.service import parse_sources, parse_text
 from soa_generator.validation import lint_rules
 
 
@@ -80,6 +80,20 @@ rhrp_lc10k_3t_ckt
             }])
             self.assertEqual(payload["summary"]["files"], 1)
             self.assertEqual(payload["devices"][0]["isolation_voltage"], 30.0)
+
+    def test_model_ports_and_isolation_candidate(self) -> None:
+        fixture = Path(__file__).parent / "fixtures" / "model_ports.scs"
+        text = fixture.read_text(encoding="utf-8")
+        definitions = parse_model_definitions(text)
+        self.assertEqual(definitions[0][0], "n50_hvbn_30v_ckt")
+        self.assertEqual(definitions[0][1][-2:], ["nbl", "psub"])
+        payload = parse_text(text, str(fixture))
+        by_name = {device["name"]: device for device in payload["devices"]}
+        self.assertEqual(by_name["n50_hvbn_30v_ckt"]["port_confidence"], "confirmed")
+        self.assertIn("nbl", by_name["n50_hvbn_30v_ckt"]["topology"])
+        self.assertEqual(by_name["pch3d3_nbl_7v_7t_mac"]["family_voltage"], 3.3)
+        self.assertEqual(by_name["pch3d3_nbl_7v_7t_mac"]["isolation_voltage"], 7.0)
+        self.assertTrue(any(rule["limit_kind"] == "isolation_bv" for rule in payload["rules"]))
 
 
 if __name__ == "__main__":

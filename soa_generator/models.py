@@ -10,6 +10,7 @@ Mechanism = Literal[
     "hspice_biaschk",
     "model_internal",
     "manual_table",
+    "inference",
     "unknown",
 ]
 
@@ -37,6 +38,7 @@ class Device:
     isolation_voltage: float | None = None
     isolation_confidence: str = "missing"
     ports: list[str] = field(default_factory=list)
+    port_confidence: str = "missing"
     aliases: list[str] = field(default_factory=list)
     source: SourceEvidence | None = None
     soa_status: str = "unknown"

@@ -1,0 +1,4 @@
+simulator lang=spectre
+inline subckt n50_hvbn_30v_ckt (d g s b nbl psub)
+inline subckt pch3d3_nbl_7v_7t_mac (d g s b pepi nbl psub)
+check_iso assert subs=n50_hvbn_30v_ckt expr="V(nbl,psub)" max=30 level=warning
