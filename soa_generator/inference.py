@@ -91,8 +91,9 @@ def _candidate(
     route: str = "inference",
 ) -> Rule:
     value_note = reason
+    pair_id = ":".join(terminal_pair) or "unknown"
     rule = Rule(
-        rule_id=f"inferred:{limit_kind}:{device.name}:{terminal_pair[0]}:{terminal_pair[1]}",
+        rule_id=f"inferred:{limit_kind}:{device.name}:{pair_id}",
         name=name,
         target=device.name,
         target_kind="sub",
@@ -136,6 +137,10 @@ def non_mos_rule_candidates(
         (rule.target, re.sub(r"\s+", "", rule.expr).lower())
         for rule in existing_rules
     }
+    existing_kinds = {
+        (rule.target, re.sub(r"\s+", "", rule.expr).lower(), rule.limit_kind)
+        for rule in existing_rules
+    }
     candidates: list[Rule] = []
     for device in devices:
         family = device.family
@@ -150,7 +155,8 @@ def non_mos_rule_candidates(
             or device.ports[2].lower() in {"sx", "sub", "psub", "bulk", "b"}
         )
         expr = f"v({left},{right})"
-        if (device.name, expr.replace(" ", "").lower()) in existing:
+        existing_expr = (device.name, expr.replace(" ", "").lower()) in existing
+        if existing_expr and family != "diode":
             continue
         value: float | None
         reason: str
@@ -168,7 +174,7 @@ def non_mos_rule_candidates(
             if model_value:
                 value, parameter_name = model_value
                 reason = f"模型参数 {parameter_name}={value:g} 提供端子耐压线索；仍需确认它是否对应当前器件端口。"
-                limit_kind = "reverse_voltage" if family == "diode" else "terminal_voltage"
+                limit_kind = "reverse_voltage" if family == "diode" else "Vce" if family == "bjt" else "terminal_voltage"
             elif device.family_voltage is not None:
                 value = device.family_voltage * (1.0 + margin)
                 reason = f"{family} 缺少模型耐压参数，按器件族电压 {device.family_voltage:g} V 加 {margin:.0%} 经验裕量。"
@@ -180,6 +186,25 @@ def non_mos_rule_candidates(
                 candidate_status = "missing"
             if value is not None:
                 minimum = f"{-value:g}"
+            if family == "diode":
+                forward_value = _numeric_parameter(device, ("fv_max",))
+                forward_key = (device.name, expr.replace(" ", "").lower(), "forward_voltage")
+                if forward_value and forward_key not in existing_kinds:
+                    forward, parameter_name = forward_value
+                    candidates.append(
+                        _candidate(
+                            device,
+                            name=f"candidate_{device.name}_forward_voltage_{left}_{right}",
+                            expr=expr,
+                            limit_kind="forward_voltage",
+                            maximum=f"{forward:g}",
+                            reason=f"模型参数 {parameter_name}={forward:g} 提供二极管正向压降线索；仍需确认测试条件。",
+                            source_path=device.source.path if device.source else source_path,
+                            terminal_pair=[left, right],
+                        )
+                    )
+            if existing_expr:
+                continue
         source = device.source.path if device.source else source_path
         pairs = [(left, right)]
         if family == "resistor" and limit_kind == "resistor_substrate_voltage" and len(device.ports) >= 3:
@@ -219,6 +244,14 @@ def _model_limit_kind(left: str, right: str) -> str:
         return "Vbd"
     if pair == {"s", "b"} or pair == {"s", "bs"}:
         return "Vbs"
+    if pair in ({"c", "e"}, {"collector", "emitter"}):
+        return "Vce"
+    if pair in ({"c", "b"}, {"collector", "base"}):
+        return "Vcb"
+    if pair in ({"b", "e"}, {"base", "emitter"}):
+        return "Vbe"
+    if pair in ({"p", "n"}, {"pos", "neg"}, {"anode", "cathode"}):
+        return "reverse_voltage"
     return "terminal_voltage"
 
 
@@ -264,25 +297,51 @@ def model_rule_candidates(
                 )
             )
             existing.add((device.name, expr.replace(" ", "").lower()))
+        if device.family in {"mos", "ldmos", "demos", "resistor"}:
+            ports = {port.lower(): port for port in device.ports}
+            current_port = ports.get("d") or ports.get("n1") or (device.ports[0] if device.ports else None)
+            current_value = _numeric_parameter(device, ("jmax", "current_density"))
+            if current_port and current_value:
+                value, parameter_name = current_value
+                expr = f"I({current_port})"
+                if (device.name, expr.replace(" ", "").lower()) not in existing:
+                    candidates.append(
+                        _candidate(
+                            device,
+                            name=f"candidate_{device.name}_current_density_{current_port}",
+                            expr=expr,
+                            limit_kind="current_density",
+                            maximum=f"{value:g}",
+                            minimum=f"{-value:g}",
+                            reason=f"模型参数 {parameter_name}={value:g} 提供电流密度线索；需确认归一化面积和单位。",
+                            source_path=source,
+                            terminal_pair=[current_port],
+                        )
+                    )
+                    existing.add((device.name, expr.replace(" ", "").lower()))
         if device.family not in {"mos", "ldmos", "demos"}:
             continue
         ports = {port.lower(): port for port in device.ports}
+        source_port = ports.get("s") or ports.get("bs")
+        body_port = ports.get("b") or ports.get("body")
+        separate_body = bool(body_port and (not source_port or body_port.lower() != source_port.lower()))
         fallback_pairs = []
-        if ports.get("d") and ports.get("s"):
-            fallback_pairs.append((ports["d"], ports["s"], "Vds"))
-        if ports.get("g") and ports.get("s"):
-            fallback_pairs.append((ports["g"], ports["s"], "Vgs"))
-        if ports.get("b") and ports.get("s"):
-            fallback_pairs.append((ports["b"], ports["s"], "Vbs"))
+        if ports.get("d") and source_port:
+            fallback_pairs.append((ports["d"], source_port, "Vds"))
+        if ports.get("g") and source_port:
+            fallback_pairs.append((ports["g"], source_port, "Vgs"))
+        if separate_body and source_port:
+            fallback_pairs.append((body_port, source_port, "Vbs"))
         if ports.get("g") and ports.get("d"):
             fallback_pairs.append((ports["g"], ports["d"], "Vgd"))
-        if ports.get("d") and ports.get("b"):
-            fallback_pairs.append((ports["d"], ports["b"], "Vbd"))
-        if ports.get("g") and ports.get("b"):
-            fallback_pairs.append((ports["g"], ports["b"], "Vgb"))
-        value = device.family_voltage * (1.0 + margin) if device.family_voltage is not None else None
+        if ports.get("d") and separate_body:
+            fallback_pairs.append((ports["d"], body_port, "Vbd"))
+        if ports.get("g") and separate_body:
+            fallback_pairs.append((ports["g"], body_port, "Vgb"))
         for left, right, limit_kind in fallback_pairs:
             expr = f"v({left},{right})"
+            nominal = device.gate_voltage if limit_kind in {"Vgs", "Vgd", "Vgb"} else device.family_voltage
+            value = nominal * (1.0 + margin) if nominal is not None else None
             if (device.name, expr.replace(" ", "").lower()) in existing:
                 continue
             if value is None:
@@ -290,7 +349,8 @@ def model_rule_candidates(
                 status = "missing"
                 route = "missing"
             else:
-                reason = f"Spectre 模型未提供 {limit_kind} 数值上限，按器件族电压 {device.family_voltage:g} V 加 {margin:.0%} 裕量生成候选；这不是 SOA 曲线。"
+                voltage_label = "栅极名义电压" if limit_kind in {"Vgs", "Vgd", "Vgb"} else "器件族电压"
+                reason = f"Spectre 模型未提供 {limit_kind} 数值上限，按{voltage_label} {nominal:g} V 加 {margin:.0%} 裕量生成候选；这不是 SOA 曲线。"
                 status = "inferred"
                 route = "inference"
             candidates.append(

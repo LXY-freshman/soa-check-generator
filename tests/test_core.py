@@ -29,7 +29,7 @@ endsection soa_hv
         self.assertEqual(rules[1].target_kind, "subs")
         self.assertEqual(rules[1].maximum, "1.98")
         parsed = parse_text(text, "soa.scs", source_priority=["spectre_soa", "model_spectre", "inference"])
-        self.assertEqual(parsed["source_priority"][0], "spectre_soa")
+        self.assertEqual(parsed["source_priority"][:2], ["user_confirmed", "spectre_soa"])
 
     def test_matching_expression_min_and_max_are_one_rule(self) -> None:
         text = '''a assert sub=n50_ckt expr="v(d,b)" min=-5 message="Vbd" level=warning duration=t_trans_hv
@@ -67,6 +67,40 @@ esd6_pnp_nbl
         self.assertEqual(iso.isolation_confidence, "inferred")
         self.assertEqual(classify_device("rnwaa5v_ckt").family_voltage, 5.0)
         self.assertEqual(classify_device("pnp18").family_voltage, 1.8)
+
+    def test_ldmos_keeps_drain_and_gate_voltage_separate(self) -> None:
+        device = classify_device("nld12_iso_ckt")
+        self.assertEqual(device.family_voltage, 12.0)
+        self.assertEqual(device.gate_voltage, 5.0)
+        self.assertEqual(device.gate_voltage_confidence, "inferred")
+        payload = parse_text("subckt nld12_iso_ckt (d g bs nbl psub)\nends nld12_iso_ckt\n", "nld12.scs")
+        parsed = payload["devices"][0]
+        matrix = {(item["limit_kind"], tuple(item["terminal_pair"])): item for item in parsed["check_matrix"]}
+        self.assertEqual(matrix[("Vds", ("d", "bs"))]["status"], "inferred")
+        self.assertEqual(matrix[("Vgs", ("g", "bs"))]["status"], "inferred")
+        values = {rule["limit_kind"]: rule["maximum"] for rule in payload["rules"] if rule["target"] == "nld12_iso_ckt"}
+        self.assertEqual(values["Vds"], "13.2")
+        self.assertEqual(values["Vgs"], "5.5")
+        isolation_pairs = {
+            tuple(rule["terminal_pair"])
+            for rule in payload["rules"]
+            if rule["target"] == "nld12_iso_ckt" and rule["limit_kind"] == "isolation_bv"
+        }
+        self.assertTrue({("nbl", "psub"), ("nbl", "bs"), ("nbl", "d")} <= isolation_pairs)
+
+    def test_physical_matrix_covers_non_mos_terminal_checks(self) -> None:
+        text = """inline subckt dio5 (p n)\ninline subckt npn5 (c b e)\ninline subckt rpoly (n1 n2 sub)\ninline subckt mim_5v (top bot)\n"""
+        payload = parse_text(text, "non_mos_matrix.scs")
+        devices = {device["name"]: device for device in payload["devices"]}
+        diode_kinds = {item["limit_kind"] for item in devices["dio5"]["check_matrix"]}
+        self.assertIn("reverse_voltage", diode_kinds)
+        self.assertIn("forward_voltage", diode_kinds)
+        bjt_kinds = {item["limit_kind"] for item in devices["npn5"]["check_matrix"]}
+        self.assertEqual(bjt_kinds, {"Vce", "Vcb", "Vbe"})
+        resistor = {(item["limit_kind"], tuple(item["terminal_pair"])): item for item in devices["rpoly"]["check_matrix"]}
+        self.assertTrue(resistor[("resistor_substrate_voltage", ("n1", "sub"))]["applicable"])
+        self.assertIn("current_density", {item["limit_kind"] for item in devices["rpoly"]["check_matrix"]})
+        self.assertEqual(devices["mim_5v"]["check_matrix"][0]["limit_kind"], "terminal_voltage")
 
     def test_combined_export_selects_devices_and_renders_section(self) -> None:
         rules = parse_spectre_asserts('check assert sub=n50_ckt expr="V(d,s)" max=5')
@@ -200,7 +234,8 @@ esd6_pnp_nbl
             next(rule for rule in payload["rules"] if rule["target"] == "n50_hvbn_30v_ckt")["terminal_pair"],
             ["nbl", "psub"],
         )
-        self.assertFalse(any(rule["target"] == "n50_hvbn_30v_ckt" and rule["limit_kind"] == "isolation_bv" and rule["confidence"] == "inferred" for rule in payload["rules"]))
+        self.assertFalse(any(rule["target"] == "n50_hvbn_30v_ckt" and rule["limit_kind"] == "isolation_bv" and rule["terminal_pair"] == ["nbl", "psub"] and rule["confidence"] == "inferred" for rule in payload["rules"]))
+        self.assertTrue(any(rule["target"] == "n50_hvbn_30v_ckt" and rule["limit_kind"] == "isolation_bv" and rule["terminal_pair"] == ["nbl", "b"] and rule["confidence"] == "inferred" for rule in payload["rules"]))
         pch_candidates = [rule for rule in payload["rules"] if rule["target"] == "pch3d3_nbl_7v_7t_mac"]
         self.assertTrue(any(rule["limit_kind"] == "isolation_bv" and not rule["enabled"] for rule in pch_candidates))
         self.assertEqual(pch_candidates[0]["terminal_pair"], ["nbl", "psub"])
@@ -227,6 +262,38 @@ ends pvar3d3_mac
         self.assertEqual(diode_rule["minimum"], "-11.5")
         var_rule = next(rule for rule in payload["rules"] if rule["target"] == "pvar3d3_mac")
         self.assertEqual(var_rule["maximum"], "5.5")
+
+    def test_model_forward_voltage_and_current_density_candidates(self) -> None:
+        text = """simulator lang=spectre
+model dio5 diode
++ bv=5.5 fv_max=1.2
+subckt dio5 (p n)
+ends dio5
+model n50_ckt nmos
++ jmax=0.25
+subckt n50_ckt (d g s b)
+ends n50_ckt
+"""
+        payload = parse_text(text, "model_forward_current.scs")
+        diode_rules = [rule for rule in payload["rules"] if rule["target"] == "dio5"]
+        self.assertTrue(any(rule["limit_kind"] == "forward_voltage" and rule["maximum"] == "1.2" for rule in diode_rules))
+        mos_rules = [rule for rule in payload["rules"] if rule["target"] == "n50_ckt"]
+        current = next(rule for rule in mos_rules if rule["limit_kind"] == "current_density")
+        self.assertEqual(current["maximum"], "0.25")
+        self.assertEqual(current["minimum"], "-0.25")
+
+    def test_diode_forward_candidate_survives_source_reverse_rule(self) -> None:
+        text = """simulator lang=spectre
+model dio5 diode
++ bv=5.5 fv_max=1.2
+subckt dio5 (p n)
+source_reverse assert sub=dio5 expr=\"V(p,n)\" max=5.5
+ends dio5
+"""
+        payload = parse_text(text, "diode_source_and_model.scs")
+        diode_rules = [rule for rule in payload["rules"] if rule["target"] == "dio5"]
+        self.assertTrue(any(rule["limit_kind"] == "reverse_voltage" and rule["confidence"] == "confirmed" for rule in diode_rules))
+        self.assertTrue(any(rule["limit_kind"] == "forward_voltage" and rule["maximum"] == "1.2" for rule in diode_rules))
 
     def test_spectre_model_limits_generate_terminal_candidates(self) -> None:
         text = """simulator lang=spectre
@@ -266,6 +333,14 @@ ends parent
         self.assertEqual(matrix["Vds"]["terminal_pair"], ["d", "s"])
         self.assertEqual(matrix["isolation_bv"]["status"], "not_applicable")
         self.assertTrue(device["profile_completeness"] < 100)
+
+    def test_psub_alone_does_not_create_isolation_check(self) -> None:
+        payload = parse_text("subckt n50_ckt (d g s b psub)\nends n50_ckt\n", "ordinary_mos_psub.scs")
+        matrix = [item for item in payload["devices"][0]["check_matrix"] if item["limit_kind"] == "isolation_bv"]
+        self.assertEqual(len(matrix), 1)
+        self.assertFalse(matrix[0]["applicable"])
+        self.assertEqual(matrix[0]["status"], "not_applicable")
+        self.assertIsNone(payload["devices"][0]["isolation_voltage"])
 
     def test_model_soa_detection_does_not_treat_every_bsource_as_soa(self) -> None:
         ordinary = "subckt demo d g s b\ncgb (g b) bsource q=1\n"

@@ -91,7 +91,7 @@ def apply_port_metadata(device: Device, ports: list[str]) -> Device:
     # when the PDK does not publish a numeric isolation rating. Keep the
     # candidate visibly inferred; it must not silently replace a source rule.
     if device.isolation_voltage is None and device.family_voltage is not None:
-        if any(marker in device.topology for marker in ("iso", "isub", "nbl", "psub", "pepi", "hvnwell", "hvbn", "dpw", "ddnw")):
+        if any(marker in device.topology for marker in ("iso", "isub", "nbl", "pepi", "hvnwell", "hvbn", "dpw", "ddnw")):
             device.isolation_voltage = round(device.family_voltage * 1.10, 6)
             device.isolation_confidence = "inferred"
     return device
@@ -140,13 +140,24 @@ def isolation_voltage(name: str) -> float | None:
 def classify_device(name: str, category: str = "") -> Device:
     family = classify_family(name, category)
     iso = isolation_voltage(name)
+    nominal_voltage = family_voltage(name)
+    gate_voltage = None
+    gate_confidence = "missing"
+    if nominal_voltage is not None and family in {"ldmos", "demos"}:
+        gate_voltage = min(nominal_voltage, 5.0)
+        gate_confidence = "inferred"
+    elif nominal_voltage is not None and family == "mos":
+        gate_voltage = nominal_voltage
+        gate_confidence = "inferred"
     return Device(
         name=name,
         category=category or family,
         scope=classify_scope(name, category),
         family=family,
         topology=topology_tokens(name),
-        family_voltage=family_voltage(name),
+        family_voltage=nominal_voltage,
+        gate_voltage=gate_voltage,
+        gate_voltage_confidence=gate_confidence,
         isolation_voltage=iso,
         isolation_confidence="inferred" if iso is not None else "missing",
     )
@@ -156,6 +167,7 @@ def classify_limit(expr: str, message: str | None = None) -> str:
     text = f"{expr} {message or ''}".lower()
     for key, aliases in {
         "isolation_bv": ("v(iso", "v(isub", "v(nbl", "v(pepi", "v(b,sub)", "v(iso,sub)", "isolation"),
+        "reverse_voltage": ("v(p,n)", "v(pos,neg)", "v(anode,cathode)", "reverse_voltage"),
         "Vds": ("vds", "v(d,s)", "v(d,bs)"),
         "Vgs": ("vgs", "v(g,s)", "v(g,bs)"),
         "Vbs": ("vbs", "v(s,b)", "v(bs", "v(b,s)"),

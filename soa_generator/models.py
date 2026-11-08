@@ -35,6 +35,8 @@ class Device:
     family: str = "unknown"
     topology: list[str] = field(default_factory=list)
     family_voltage: float | None = None
+    gate_voltage: float | None = None
+    gate_voltage_confidence: str = "missing"
     isolation_voltage: float | None = None
     isolation_confidence: str = "missing"
     ports: list[str] = field(default_factory=list)

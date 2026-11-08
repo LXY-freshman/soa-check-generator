@@ -307,7 +307,7 @@ def parse_source(source: dict[str, Any], adapter_config: dict[str, Any] | None =
     return {
         "source": safe_source,
         "adapter": adapter_metadata(adapter_config),
-        "source_priority": list(source_priority or []),
+        "source_priority": effective_priority,
         "devices": [item.to_dict() for item in devices],
         "rules": [item.to_dict() for item in rules],
         "summary": {"files": 1, "devices": len(devices), "rules": len(rules)},
@@ -348,7 +348,7 @@ def parse_text(text: str, path: str, adapter_config: dict[str, Any] | None = Non
     return {
         "source": {"kind": "browser_file", "path": path},
         "adapter": adapter_metadata(adapter_config),
-        "source_priority": list(source_priority or []),
+        "source_priority": effective_priority,
         "devices": [item.to_dict() for item in devices],
         "rules": [item.to_dict() for item in rules],
         "file_results": [{
@@ -469,7 +469,7 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
     return {
         "sources": safe_sources,
         "adapter": adapter_metadata(adapter_config),
-        "source_priority": list(source_priority or []),
+        "source_priority": effective_priority,
         "devices": [item.to_dict() for item in devices],
         "rules": [item.to_dict() for item in rules],
         "file_results": file_results,
@@ -627,7 +627,7 @@ class Handler(BaseHTTPRequestHandler):
                 rules.extend(non_mos)
                 devices = merge_devices(devices, rules)
                 refresh_profiles(devices, rules, effective_priority)
-                self._send_json({"adapter": adapter_metadata(body.get("adapter_config")), "source_priority": list(body.get("source_priority") or []), "devices": [item.to_dict() for item in devices], "rules": [item.to_dict() for item in rules], "file_results": file_results, "summary": {"files": len(body.get("files", [])), "devices": len(devices), "rules": len(rules), "inferred_rules": len(non_mos) + len(model_rules)}})
+                self._send_json({"adapter": adapter_metadata(body.get("adapter_config")), "source_priority": effective_priority, "devices": [item.to_dict() for item in devices], "rules": [item.to_dict() for item in rules], "file_results": file_results, "summary": {"files": len(body.get("files", [])), "devices": len(devices), "rules": len(rules), "inferred_rules": len(non_mos) + len(model_rules)}})
                 return
             if path == "/api/export":
                 rules = [_rule_from_dict(value) for value in body.get("rules", [])]

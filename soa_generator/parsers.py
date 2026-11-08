@@ -246,19 +246,23 @@ def detect_model_soa(text: str) -> dict[str, object]:
     return {"enabled": False, "mechanism": None, "line": None, "note": ""}
 
 
-def _isolation_pair(device: Device) -> tuple[str, str] | None:
-    ports = {port.lower() for port in device.ports}
-    if "iso" in ports and "b" in ports:
-        return "iso", "b"
-    if "iso" in ports and "sub" in ports:
-        return "iso", "sub"
-    if "isub" in ports and "b" in ports:
-        return "isub", "b"
-    if "nbl" in ports and "psub" in ports:
-        return "nbl", "psub"
-    if "pepi" in ports and "psub" in ports:
-        return "pepi", "psub"
-    return None
+def _isolation_pairs(device: Device) -> list[tuple[str, str]]:
+    ports = {port.lower(): port for port in device.ports}
+    pairs: list[tuple[str, str]] = []
+    for left_names, right_names in [
+        (("iso",), ("b", "bs", "sub")),
+        (("isub",), ("b", "bs", "sub")),
+        (("nbl",), ("psub", "pepi", "b", "bs", "d")),
+        (("pepi",), ("psub",)),
+        (("hvnwell", "hvbn", "dpw", "ddnw"), ("b", "bs", "sub")),
+    ]:
+        left_values = [ports[name] for name in left_names if name in ports]
+        right_values = [ports[name] for name in right_names if name in ports]
+        for left in left_values:
+            for right in right_values:
+                if (left, right) not in pairs:
+                    pairs.append((left, right))
+    return pairs
 
 
 def topology_rule_candidates(
@@ -271,48 +275,48 @@ def topology_rule_candidates(
     existing = {(rule.target, rule.expr.replace(" ", "").lower(), rule.limit_kind) for rule in existing_rules}
     candidates: list[Rule] = []
     for device in devices:
-        pair = _isolation_pair(device)
-        if not pair or not device.ports or device.isolation_voltage is None:
+        pairs = _isolation_pairs(device)
+        if not pairs or not device.ports or device.isolation_voltage is None:
             continue
-        left, right = pair
-        expr = f"v({left},{right})"
-        key = (device.name, expr, "isolation_bv")
-        if key in existing:
-            continue
-        named_voltage = isolation_voltage(device.name) is not None
-        value = device.isolation_voltage
-        reason = (
-            f"端口 {left}/{right} 来自模型定义；隔离等级来自器件命名中的电压线索，仍需手册或原生 SOA 确认。"
-            if named_voltage
-            else f"端口 {left}/{right} 来自模型定义；未找到明确隔离耐压，按器件族电压及 {margin:.0%} 策略推断。"
-        )
-        rule = Rule(
-            rule_id=f"inferred:isolation:{device.name}:{left}:{right}",
-            name=f"candidate_{device.name}_{left}_{right}_isolation_bv",
-            target=device.name,
-            target_kind="sub",
-            expr=expr,
-            maximum=f"{value:g}",
-            message=f"SOA Warning - {device.name} isolation voltage candidate exceeded",
-            level="warning",
-            duration="t_trans_hv",
-            section="soa_generated",
-            limit_kind="isolation_bv",
-            terminal_pair=[left, right],
-            device_family=device.family,
-            confidence="inferred",
-            enabled=False,
-            source=SourceEvidence(
-                path=source_path,
-                mechanism="inference",
-                note=reason,
-            ),
-            notes=[reason, "候选规则默认关闭，请结合工艺手册或原生 SOA 文件确认后再启用。"],
-            status="inferred",
-            route="topology",
-        )
-        rule.original = rule.to_dict()
-        candidates.append(rule)
+        for left, right in pairs:
+            expr = f"v({left},{right})"
+            key = (device.name, expr, "isolation_bv")
+            if key in existing:
+                continue
+            named_voltage = isolation_voltage(device.name) is not None
+            value = device.isolation_voltage
+            reason = (
+                f"端口 {left}/{right} 来自模型定义；隔离等级来自器件命名中的电压线索，仍需手册或原生 SOA 确认。"
+                if named_voltage
+                else f"端口 {left}/{right} 来自模型定义；未找到明确隔离耐压，按器件族电压及 {margin:.0%} 策略推断。"
+            )
+            rule = Rule(
+                rule_id=f"inferred:isolation:{device.name}:{left}:{right}",
+                name=f"candidate_{device.name}_{left}_{right}_isolation_bv",
+                target=device.name,
+                target_kind="sub",
+                expr=expr,
+                maximum=f"{value:g}",
+                message=f"SOA Warning - {device.name} isolation voltage candidate exceeded",
+                level="warning",
+                duration="t_trans_hv",
+                section="soa_generated",
+                limit_kind="isolation_bv",
+                terminal_pair=[left, right],
+                device_family=device.family,
+                confidence="inferred",
+                enabled=False,
+                source=SourceEvidence(
+                    path=source_path,
+                    mechanism="inference",
+                    note=reason,
+                ),
+                notes=[reason, "候选规则默认关闭，请结合工艺手册或原生 SOA 文件确认后再启用。"],
+                status="inferred",
+                route="topology",
+            )
+            rule.original = rule.to_dict()
+            candidates.append(rule)
     return candidates
 
 
@@ -362,6 +366,9 @@ def merge_devices(devices: Iterable[Device], rules: Iterable[Rule]) -> list[Devi
             current.parameter_confidence = "confirmed"
         if current.family_voltage is None:
             current.family_voltage = incoming.family_voltage
+        if current.gate_voltage is None:
+            current.gate_voltage = incoming.gate_voltage
+            current.gate_voltage_confidence = incoming.gate_voltage_confidence
         if current.isolation_voltage is None:
             current.isolation_voltage = incoming.isolation_voltage
             current.isolation_confidence = incoming.isolation_confidence
