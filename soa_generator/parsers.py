@@ -357,6 +357,7 @@ def merge_devices(devices: Iterable[Device], rules: Iterable[Rule]) -> list[Devi
             current.scope = incoming.scope
         current.topology = list(dict.fromkeys([*current.topology, *incoming.topology]))
         current.ports = list(dict.fromkeys([*current.ports, *incoming.ports]))
+        current.port_roles.update(incoming.port_roles)
         if incoming.port_confidence == "confirmed":
             current.port_confidence = "confirmed"
         current.model_parameters.update(incoming.model_parameters)

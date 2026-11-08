@@ -228,6 +228,8 @@ esd6_pnp_nbl
         by_name = {device["name"]: device for device in payload["devices"]}
         self.assertEqual(by_name["n50_hvbn_30v_ckt"]["port_confidence"], "confirmed")
         self.assertIn("nbl", by_name["n50_hvbn_30v_ckt"]["topology"])
+        self.assertEqual(by_name["n50_hvbn_30v_ckt"]["port_roles"]["psub"], "bulk_substrate")
+        self.assertEqual(by_name["n50_hvbn_30v_ckt"]["port_roles"]["nbl"], "isolation_nbl")
         self.assertEqual(by_name["pch3d3_nbl_7v_7t_mac"]["family_voltage"], 3.3)
         self.assertEqual(by_name["pch3d3_nbl_7v_7t_mac"]["isolation_voltage"], 7.0)
         self.assertEqual(

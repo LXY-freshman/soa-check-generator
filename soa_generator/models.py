@@ -40,6 +40,7 @@ class Device:
     isolation_voltage: float | None = None
     isolation_confidence: str = "missing"
     ports: list[str] = field(default_factory=list)
+    port_roles: dict[str, str] = field(default_factory=dict)
     port_confidence: str = "missing"
     model_parameters: dict[str, str] = field(default_factory=dict)
     model_limits: list[dict[str, str]] = field(default_factory=list)

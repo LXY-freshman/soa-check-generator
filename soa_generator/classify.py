@@ -62,7 +62,6 @@ def topology_from_ports(ports: list[str]) -> list[str]:
         ("iso", "iso"),
         ("isub", "isub"),
         ("nbl", "nbl"),
-        ("psub", "psub"),
         ("pepi", "pepi"),
         ("hvnwell", "hvnwell"),
         ("hvbn", "hvbn"),
@@ -82,6 +81,24 @@ def apply_port_metadata(device: Device, ports: list[str]) -> Device:
         if value and value not in cleaned:
             cleaned.append(value)
     device.ports = cleaned
+    role_names = {
+        "d": "drain", "drain": "drain",
+        "g": "gate", "gate": "gate",
+        "s": "source", "source": "source",
+        "bs": "body_source", "b": "body", "body": "body",
+        "psub": "bulk_substrate", "sub": "bulk_substrate",
+        "nbl": "isolation_nbl", "pepi": "isolation_epitaxy",
+        "iso": "isolation_ring", "isub": "isolation_substrate",
+        "hvnwell": "isolation_well", "hvbn": "isolation_well",
+        "dpw": "isolation_well", "ddnw": "isolation_well",
+        "p": "anode", "pos": "anode", "n": "cathode", "neg": "cathode",
+        "c": "collector", "e": "emitter",
+    }
+    device.port_roles = {
+        port: role_names[port.lower()]
+        for port in cleaned
+        if port.lower() in role_names
+    }
     if cleaned:
         device.port_confidence = "confirmed"
     for marker in topology_from_ports(cleaned):

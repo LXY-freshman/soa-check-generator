@@ -35,7 +35,7 @@
 - [x] 模型 `subckt/model` 基础识别和模型内 SOA 线索
 - [x] 区分普通 `bsource` 与 `gsoa`/`soa_*` 模型内 SOA，并显示逐文件解析结果
 - [x] Spectre `subckt`/`inline subckt` 端口解析
-- [x] `nbl`/`psub`/`pepi`/`iso` 拓扑和隔离耐压候选识别
+- [x] `nbl`/`pepi`/`iso` 隔离拓扑与 `psub` 大衬底端口语义识别
 - [x] 电阻、二极管、BJT、Varactor、MIM/MOM、ESD 类别识别和端子解析
 - [x] Spectre/HSPICE 模型安全参数提取（`bv_max`、`bv/vb`、`ibv`、`fv_max`）
 - [x] 扫描 Spectre 子电路模型生成关闭的 `Vds/Vgs/Vbs/Vbd` 和端子耐压候选
