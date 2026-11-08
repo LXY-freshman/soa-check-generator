@@ -16,7 +16,20 @@
       "pattern": "^custom_iso_30v",
       "isolation_voltage": 30.0,
       "isolation_confidence": "documented",
-      "topology": ["iso", "nbl", "psub"]
+      "topology": ["iso", "nbl"]
+    }
+  ],
+  "check_rules": [
+    {
+      "pattern": "^custom12_",
+      "name": "documented_custom12_gate_voltage",
+      "limit_kind": "Vgs",
+      "expr": "v(g,bs)",
+      "maximum": "5.5",
+      "minimum": "-5.5",
+      "source_path": "manuals/example_process_manual.pdf",
+      "page": 42,
+      "note": "示例工艺手册的栅极对体端绝对耐压，已按设计裕量记录。"
     }
   ]
 }

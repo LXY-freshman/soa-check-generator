@@ -12,6 +12,7 @@
 | 模型内 `gsoa/bsource` 与外部 assert 分开 | ADR 0003、PROJECT_PLAN | 已实现 |
 | 端口、隔离环、NBL/PSUB/PEPI、组合器件 | ADR 0006/0007、GLOSSARY | 已实现基础版；端口档案明确区分 `PSUB=bulk_substrate` 与 `NBL/PEPI/ISO=isolation_structure` |
 | MOS 和非 MOS 模型参数/命名推断候选 | ADR 0005、PROJECT_PLAN | 已实现基础版 |
+| 工艺手册限值作为独立证据参与规则选择 | ADR 0005/0007、适配器文档 | `soa-adapter/v1.check_rules` 已实现，保留路径、页码、备注和 `documented` 置信度 |
 | 用户规则复制、删除、恢复、覆盖和导出 | PROJECT_PLAN、GLOSSARY | 已实现 |
 | 父器件/子器件依赖导出 | ADR 0006、GLOSSARY | 已实现基础版 |
 | Spectre 快速检查 | PROJECT_PLAN、README | 已实现 |

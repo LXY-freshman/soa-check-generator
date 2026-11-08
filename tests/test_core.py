@@ -416,6 +416,36 @@ WARNING (SPECTRE-17607): Assert `check' is ignored.
         self.assertIn("iso", device.topology)
         self.assertEqual(validate_adapter_config(config), [])
 
+    def test_adapter_documented_check_rule_binds_to_device_profile(self) -> None:
+        config = {
+            "schema": "soa-adapter/v1",
+            "id": "documented-demo",
+            "version": "1",
+            "device_rules": [{"pattern": "^custom12_", "family": "ldmos", "family_voltage": 12}],
+            "check_rules": [{
+                "pattern": "^custom12_",
+                "limit_kind": "Vgs",
+                "expr": "v(g,bs)",
+                "maximum": "5.5",
+                "minimum": "-5.5",
+                "source_path": "manual.pdf",
+                "page": 42,
+                "note": "gate absolute limit",
+            }],
+        }
+        payload = parse_text(
+            "subckt custom12_iso_ckt (d g bs nbl psub)\nends custom12_iso_ckt\n",
+            "custom12.scs",
+            adapter_config=config,
+        )
+        rule = next(rule for rule in payload["rules"] if rule["rule_id"].startswith("adapter:"))
+        self.assertEqual(rule["confidence"], "documented")
+        self.assertEqual(rule["route"], "adapter")
+        self.assertEqual(rule["source"]["page"], 42)
+        matrix = next(item for item in payload["devices"][0]["check_matrix"] if item["limit_kind"] == "Vgs")
+        self.assertEqual(matrix["route"], "adapter")
+        self.assertEqual(matrix["maximum"], "5.5")
+
     def test_project_schema_keeps_devices_and_adapter(self) -> None:
         rules = parse_spectre_asserts('check assert sub=n50_ckt expr="V(d,s)" max=5')
         adapter = {"schema": "soa-adapter/v1", "id": "demo", "version": "1", "device_rules": []}

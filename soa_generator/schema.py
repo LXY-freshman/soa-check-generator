@@ -92,6 +92,19 @@ def validate_adapter_config(config: Any) -> list[dict[str, str]]:
         for index, rule in enumerate(rules):
             if not isinstance(rule, dict) or not rule.get("pattern"):
                 issues.append({"code": "adapter_rule", "message": f"device_rules[{index}] 必须包含 pattern。"})
+    check_rules = config.get("check_rules", [])
+    if not isinstance(check_rules, list):
+        issues.append({"code": "adapter_check_rules", "message": "check_rules 必须是数组。"})
+    else:
+        for index, rule in enumerate(check_rules):
+            if not isinstance(rule, dict) or not rule.get("pattern") or not rule.get("expr"):
+                issues.append({"code": "adapter_check_rule", "message": f"check_rules[{index}] 必须包含 pattern 和 expr。"})
+            if isinstance(rule, dict) and rule.get("page") is not None:
+                try:
+                    if int(rule["page"]) < 1:
+                        raise ValueError
+                except (TypeError, ValueError):
+                    issues.append({"code": "adapter_check_page", "message": f"check_rules[{index}].page 必须是正整数。"})
     return issues
 
 

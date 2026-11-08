@@ -19,9 +19,9 @@ DEFAULT_SOURCE_PRIORITY = [
     "user_defined",
     "spectre_soa",
     "document",
+    "adapter",
     "model_spectre",
     "device_list",
-    "adapter",
     "inference",
 ]
 
@@ -63,6 +63,8 @@ def source_route(rule: Rule) -> str:
         return "user_confirmed"
     if rule.route == "user":
         return "user_defined"
+    if rule.route == "adapter":
+        return "adapter"
     mechanism = rule.source.mechanism if rule.source else "unknown"
     if mechanism == "spectre_assert":
         return "spectre_soa"
