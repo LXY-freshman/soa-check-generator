@@ -10,7 +10,7 @@
 | 本机/SSH 路径、密码输入、禁止私钥输入、脱敏错误 | ADR 0002/0004、DEVELOPMENT | 已实现 |
 | Spectre `sub/subs`、min/max 合并、来源证据 | ADR 0003、PROJECT_PLAN | 已实现 |
 | 模型内 `gsoa/bsource` 与外部 assert 分开 | ADR 0003、PROJECT_PLAN | 已实现 |
-| 端口、隔离环、NBL/PSUB/PEPI、组合器件 | ADR 0006/0007、GLOSSARY | 已实现基础版 |
+| 端口、隔离环、NBL/PSUB/PEPI、组合器件 | ADR 0006/0007、GLOSSARY | 已实现基础版；端口档案明确区分 `PSUB=bulk_substrate` 与 `NBL/PEPI/ISO=isolation_structure` |
 | MOS 和非 MOS 模型参数/命名推断候选 | ADR 0005、PROJECT_PLAN | 已实现基础版 |
 | 用户规则复制、删除、恢复、覆盖和导出 | PROJECT_PLAN、GLOSSARY | 已实现 |
 | 父器件/子器件依赖导出 | ADR 0006、GLOSSARY | 已实现基础版 |
