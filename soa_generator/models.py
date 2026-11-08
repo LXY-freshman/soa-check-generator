@@ -47,6 +47,9 @@ class Device:
     soa_status: str = "unknown"
     associated_devices: list[str] = field(default_factory=list)
     evidence: list[dict[str, Any]] = field(default_factory=list)
+    profile_stage: str = "skeleton"
+    profile_completeness: float = 0.0
+    check_matrix: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

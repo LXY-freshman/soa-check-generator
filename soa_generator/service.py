@@ -21,6 +21,7 @@ from .adapters import apply_adapter_config
 from .classify import apply_port_metadata, classify_device
 from .export import model_soa_export_metadata, project_json, render_spectre, select_rules
 from .inference import model_rule_candidates, non_mos_rule_candidates
+from .matrix import refresh_profiles
 from .models import ExportSet, Rule, SourceEvidence
 from .parsers import (
     merge_devices,
@@ -299,6 +300,7 @@ def parse_source(source: dict[str, Any], adapter_config: dict[str, Any] | None =
     rules.extend(model_rule_candidates(devices, rules, path))
     rules.extend(non_mos_rule_candidates(devices, rules, path))
     devices = merge_devices(devices, rules)
+    refresh_profiles(devices, rules, source_priority)
     safe_source = {key: value for key, value in source.items() if key != "password"}
     return {
         "source": safe_source,
@@ -338,6 +340,7 @@ def parse_text(text: str, path: str, adapter_config: dict[str, Any] | None = Non
     rules.extend(model_rule_candidates(devices, rules, path))
     rules.extend(non_mos_rule_candidates(devices, rules, path))
     devices = merge_devices(devices, rules)
+    refresh_profiles(devices, rules, source_priority)
     model_soa = detect_model_soa(text)
     return {
         "source": {"kind": "browser_file", "path": path},
@@ -440,6 +443,7 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
     non_mos = non_mos_rule_candidates(devices, rules)
     rules.extend(non_mos)
     devices = merge_devices(devices, rules)
+    refresh_profiles(devices, rules, source_priority)
     for device in devices:
         related = [item for item in evidence if device.name in item.get("model_names", [])]
         if device.source:
@@ -617,6 +621,7 @@ class Handler(BaseHTTPRequestHandler):
                 non_mos = non_mos_rule_candidates(devices, rules)
                 rules.extend(non_mos)
                 devices = merge_devices(devices, rules)
+                refresh_profiles(devices, rules, body.get("source_priority"))
                 self._send_json({"adapter": adapter_metadata(body.get("adapter_config")), "devices": [item.to_dict() for item in devices], "rules": [item.to_dict() for item in rules], "file_results": file_results, "summary": {"files": len(body.get("files", [])), "devices": len(devices), "rules": len(rules), "inferred_rules": len(non_mos) + len(model_rules)}})
                 return
             if path == "/api/export":

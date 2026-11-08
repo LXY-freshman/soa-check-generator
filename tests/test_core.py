@@ -175,6 +175,16 @@ ends parent
         parent = next(device for device in payload["devices"] if device["name"] == "parent")
         self.assertEqual(parent["associated_devices"], ["child"])
 
+    def test_device_profile_contains_physical_check_matrix(self) -> None:
+        text = "subckt n50_ckt (d g s b)\nends n50_ckt\n"
+        payload = parse_text(text, "profile.scs")
+        device = payload["devices"][0]
+        self.assertEqual(device["profile_stage"], "enriched")
+        matrix = {item["limit_kind"]: item for item in device["check_matrix"]}
+        self.assertEqual(matrix["Vds"]["terminal_pair"], ["d", "s"])
+        self.assertEqual(matrix["isolation_bv"]["status"], "not_applicable")
+        self.assertTrue(device["profile_completeness"] < 100)
+
     def test_model_soa_detection_does_not_treat_every_bsource_as_soa(self) -> None:
         ordinary = "subckt demo d g s b\ncgb (g b) bsource q=1\n"
         self.assertFalse(detect_model_soa(ordinary)["enabled"])
