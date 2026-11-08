@@ -23,6 +23,7 @@ from .export import model_soa_export_metadata, project_json, render_spectre, sel
 from .inference import model_rule_candidates, non_mos_rule_candidates
 from .matrix import refresh_profiles
 from .models import ExportSet, Rule, SourceEvidence
+from .resolution import normalize_source_priority, resolve_rule_groups
 from .parsers import (
     merge_devices,
     parse_device_list,
@@ -270,6 +271,7 @@ def discover(source: dict[str, Any]) -> list[CandidateFile]:
 
 
 def parse_source(source: dict[str, Any], adapter_config: dict[str, Any] | None = None, source_priority: list[str] | None = None) -> dict[str, Any]:
+    effective_priority = normalize_source_priority(source_priority)
     text = read_source(source)
     path = str(source["path"])
     lower = path.lower()
@@ -300,7 +302,7 @@ def parse_source(source: dict[str, Any], adapter_config: dict[str, Any] | None =
     rules.extend(model_rule_candidates(devices, rules, path))
     rules.extend(non_mos_rule_candidates(devices, rules, path))
     devices = merge_devices(devices, rules)
-    refresh_profiles(devices, rules, source_priority)
+    refresh_profiles(devices, rules, effective_priority)
     safe_source = {key: value for key, value in source.items() if key != "password"}
     return {
         "source": safe_source,
@@ -313,6 +315,7 @@ def parse_source(source: dict[str, Any], adapter_config: dict[str, Any] | None =
 
 
 def parse_text(text: str, path: str, adapter_config: dict[str, Any] | None = None, source_priority: list[str] | None = None) -> dict[str, Any]:
+    effective_priority = normalize_source_priority(source_priority)
     lower = path.lower()
     if "devicelist" in lower or lower.endswith("device_list"):
         devices = parse_device_list(text, path)
@@ -340,7 +343,7 @@ def parse_text(text: str, path: str, adapter_config: dict[str, Any] | None = Non
     rules.extend(model_rule_candidates(devices, rules, path))
     rules.extend(non_mos_rule_candidates(devices, rules, path))
     devices = merge_devices(devices, rules)
-    refresh_profiles(devices, rules, source_priority)
+    refresh_profiles(devices, rules, effective_priority)
     model_soa = detect_model_soa(text)
     return {
         "source": {"kind": "browser_file", "path": path},
@@ -365,6 +368,7 @@ def parse_text(text: str, path: str, adapter_config: dict[str, Any] | None = Non
 
 
 def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] | None = None, source_priority: list[str] | None = None) -> dict[str, Any]:
+    effective_priority = normalize_source_priority(source_priority)
     devices = []
     rules: list[Rule] = []
     seen_paths: set[str] = set()
@@ -443,7 +447,7 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
     non_mos = non_mos_rule_candidates(devices, rules)
     rules.extend(non_mos)
     devices = merge_devices(devices, rules)
-    refresh_profiles(devices, rules, source_priority)
+    refresh_profiles(devices, rules, effective_priority)
     for device in devices:
         related = [item for item in evidence if device.name in item.get("model_names", [])]
         if device.source:
@@ -548,6 +552,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(parse_sources(body.get("sources", []), body.get("adapter_config"), body.get("source_priority")))
                 return
             if path == "/api/parse_texts":
+                effective_priority = normalize_source_priority(body.get("source_priority"))
                 devices = []
                 rules: list[Rule] = []
                 seen_rules: set[tuple[str, str, str, str | None, str | None]] = set()
@@ -621,8 +626,8 @@ class Handler(BaseHTTPRequestHandler):
                 non_mos = non_mos_rule_candidates(devices, rules)
                 rules.extend(non_mos)
                 devices = merge_devices(devices, rules)
-                refresh_profiles(devices, rules, body.get("source_priority"))
-                self._send_json({"adapter": adapter_metadata(body.get("adapter_config")), "devices": [item.to_dict() for item in devices], "rules": [item.to_dict() for item in rules], "file_results": file_results, "summary": {"files": len(body.get("files", [])), "devices": len(devices), "rules": len(rules), "inferred_rules": len(non_mos) + len(model_rules)}})
+                refresh_profiles(devices, rules, effective_priority)
+                self._send_json({"adapter": adapter_metadata(body.get("adapter_config")), "source_priority": list(body.get("source_priority") or []), "devices": [item.to_dict() for item in devices], "rules": [item.to_dict() for item in rules], "file_results": file_results, "summary": {"files": len(body.get("files", [])), "devices": len(devices), "rules": len(rules), "inferred_rules": len(non_mos) + len(model_rules)}})
                 return
             if path == "/api/export":
                 rules = [_rule_from_dict(value) for value in body.get("rules", [])]
@@ -634,12 +639,16 @@ class Handler(BaseHTTPRequestHandler):
                     include_dependencies=export_data.get("include_dependencies", True),
                     formats=export_data.get("formats", ["spectre", "json"]),
                 )
-                selected = select_rules(rules, export_set)
+                source_priority = normalize_source_priority(body.get("source_priority"))
+                selected = select_rules(rules, export_set, source_priority=source_priority)
                 model_sources = body.get("model_sources", [])
                 model_soa_mode = str(body.get("model_soa_mode", "native"))
                 model_metadata = model_soa_export_metadata(model_sources, model_soa_mode)
+                resolutions = resolve_rule_groups(rules, source_priority)
+                conflicts = [item.to_dict() for item in resolutions.values() if item.conflict]
                 self._send_json({
                     "count": len(selected),
+                    "resolution": {"groups": len(resolutions), "conflicts": conflicts},
                     "spectre": render_spectre(
                         selected,
                         model_sources=model_sources,
@@ -655,7 +664,7 @@ class Handler(BaseHTTPRequestHandler):
                         devices=body.get("devices", []),
                         sources=body.get("sources", []),
                         adapter=body.get("adapter_config"),
-                        source_priority=body.get("source_priority", []),
+                        source_priority=source_priority,
                         extra={"export_audit": body.get("export_audit")} if body.get("export_audit") else None,
                     ) if "json" in export_set.formats else None,
                     "model_soa": model_metadata,

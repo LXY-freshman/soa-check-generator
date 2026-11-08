@@ -5,8 +5,9 @@ from pathlib import Path
 from soa_generator.classify import classify_device
 from soa_generator.adapters import apply_adapter_config
 from soa_generator.export import ExportSet, model_soa_export_metadata, project_json, render_spectre, select_rules
-from soa_generator.models import Device
+from soa_generator.models import Device, Rule, SourceEvidence
 from soa_generator.parsers import detect_model_soa, parse_device_list, parse_model_definitions, parse_model_limits, parse_model_parameters, parse_spectre_asserts, parse_subckt_dependencies
+from soa_generator.resolution import resolve_rule_groups
 from soa_generator.schema import validate_adapter_config, validate_project_payload
 from soa_generator.service import _spectre_diagnostics, parse_sources, parse_text
 from soa_generator.validation import lint_rules
@@ -84,6 +85,87 @@ esd6_pnp_nbl
         self.assertIn("max=4", rendered)
         self.assertIn("level=error", rendered)
         self.assertFalse(any(issue.code == "invalid_level" for issue in lint_rules(rules, {"n50_ckt"})))
+
+    def test_source_priority_resolves_one_physical_check(self) -> None:
+        native = Rule(
+            rule_id="native",
+            name="native_vds",
+            target="n50_ckt",
+            expr="v(d,s)",
+            maximum="5",
+            limit_kind="Vds",
+            terminal_pair=["d", "s"],
+            source=SourceEvidence(path="soa.mdl", mechanism="spectre_assert"),
+        )
+        model = Rule(
+            rule_id="model",
+            name="model_vds",
+            target="n50_ckt",
+            expr="v(d,s)",
+            maximum="5.5",
+            limit_kind="Vds",
+            terminal_pair=["d", "s"],
+            source=SourceEvidence(path="model.scs", mechanism="model_internal"),
+        )
+        resolved = resolve_rule_groups([native, model], ["model_spectre", "spectre_soa"])
+        item = next(iter(resolved.values()))
+        self.assertEqual(item.chosen.rule_id, "model")
+        self.assertEqual(item.route, "model_spectre")
+        self.assertEqual(item.status, "conflict")
+        self.assertTrue(item.conflict)
+
+    def test_confirmed_rule_resolves_source_conflict(self) -> None:
+        source = Rule(
+            rule_id="source",
+            name="source_vds",
+            target="n50_ckt",
+            expr="v(d,s)",
+            maximum="5",
+            limit_kind="Vds",
+            terminal_pair=["d", "s"],
+            source=SourceEvidence(path="soa.mdl", mechanism="spectre_assert"),
+        )
+        confirmed = Rule(
+            rule_id="confirmed",
+            name="confirmed_vds",
+            target="n50_ckt",
+            expr="v(d,s)",
+            maximum="5.5",
+            limit_kind="Vds",
+            terminal_pair=["d", "s"],
+            status="confirmed",
+            route="user",
+            source=SourceEvidence(path="用户确认", mechanism="unknown"),
+        )
+        item = next(iter(resolve_rule_groups([source, confirmed]).values()))
+        self.assertEqual(item.chosen.rule_id, "confirmed")
+        self.assertEqual(item.status, "confirmed")
+        self.assertEqual(item.route, "user_confirmed")
+        self.assertTrue(item.conflict)
+
+    def test_export_deduplicates_resolved_candidates(self) -> None:
+        native = Rule(
+            rule_id="native",
+            name="native_vds",
+            target="n50_ckt",
+            expr="v(d,s)",
+            maximum="5",
+            limit_kind="Vds",
+            terminal_pair=["d", "s"],
+            source=SourceEvidence(path="soa.mdl", mechanism="spectre_assert"),
+        )
+        model = Rule(
+            rule_id="model",
+            name="model_vds",
+            target="n50_ckt",
+            expr="v(d,s)",
+            maximum="5.5",
+            limit_kind="Vds",
+            terminal_pair=["d", "s"],
+            source=SourceEvidence(path="model.scs", mechanism="model_internal"),
+        )
+        selected = select_rules([native, model], ExportSet(formats=["spectre"]), ["model_spectre", "spectre_soa"])
+        self.assertEqual([rule.rule_id for rule in selected], ["model"])
 
     def test_lint_reports_missing_check(self) -> None:
         rules = parse_spectre_asserts("bad assert sub=n50_ckt message=\"x\"")

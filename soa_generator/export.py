@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Iterable
 
 from .models import ExportSet, Rule
+from .resolution import resolve_rule_groups
 from .schema import PROJECT_SCHEMA, adapter_metadata, validate_adapter_config, validate_project_payload
 
 
@@ -55,15 +56,23 @@ def model_soa_export_metadata(
     return {"mode": mode, "sources": records, "warnings": warnings}
 
 
-def select_rules(rules: Iterable[Rule], export_set: ExportSet) -> list[Rule]:
+def select_rules(
+    rules: Iterable[Rule],
+    export_set: ExportSet,
+    source_priority: Iterable[str] | None = None,
+) -> list[Rule]:
     rules = list(rules)
     selected = set(export_set.rule_ids)
     if selected:
-        return [rule for rule in rules if rule.rule_id in selected and rule.effective("enabled") and rule.effective("status") not in {"missing", "not_applicable"}]
-    if export_set.device_names:
+        candidates = [rule for rule in rules if rule.rule_id in selected and rule.effective("enabled") and rule.effective("status") not in {"missing", "not_applicable"}]
+    elif export_set.device_names:
         devices = set(export_set.device_names)
-        return [rule for rule in rules if rule.target in devices and rule.effective("enabled") and rule.effective("status") not in {"missing", "not_applicable"}]
-    return [rule for rule in rules if rule.effective("enabled") and rule.effective("status") not in {"missing", "not_applicable"}]
+        candidates = [rule for rule in rules if rule.target in devices and rule.effective("enabled") and rule.effective("status") not in {"missing", "not_applicable"}]
+    else:
+        candidates = [rule for rule in rules if rule.effective("enabled") and rule.effective("status") not in {"missing", "not_applicable"}]
+    resolved = resolve_rule_groups(candidates, source_priority)
+    chosen_ids = {result.chosen.rule_id for result in resolved.values() if result.chosen is not None}
+    return [rule for rule in candidates if rule.rule_id in chosen_ids]
 
 
 def render_spectre(

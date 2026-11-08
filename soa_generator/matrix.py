@@ -1,48 +1,9 @@
 from __future__ import annotations
 
-import re
 from typing import Iterable
 
 from .models import Device, Rule
-
-
-DEFAULT_SOURCE_PRIORITY = ["spectre_soa", "document", "model_spectre", "device_list", "adapter", "inference"]
-
-
-def _pair(expr: str) -> tuple[str, str] | None:
-    match = re.search(r"\bv\s*\(\s*([^,\s()]+)\s*,\s*([^,\s()]+)\s*\)", expr or "", re.I)
-    return (match.group(1), match.group(2)) if match else None
-
-
-def _source_key(rule: Rule) -> str:
-    mechanism = rule.source.mechanism if rule.source else "unknown"
-    if mechanism == "spectre_assert":
-        return "spectre_soa"
-    if mechanism == "manual_table":
-        return "document"
-    if mechanism == "model_internal":
-        return "model_spectre"
-    if mechanism == "inference":
-        return "inference"
-    if rule.route in {"model", "model_spectre"}:
-        return "model_spectre"
-    if rule.route in {"user", "adapter"}:
-        return rule.route
-    return "inference" if rule.confidence == "inferred" else "document"
-
-
-def _status(rule: Rule) -> str:
-    if rule.status:
-        return rule.status
-    if rule.confidence == "inferred":
-        return "inferred"
-    if rule.confidence == "confirmed":
-        return "confirmed"
-    return "source"
-
-
-def _complete(rule: Rule) -> bool:
-    return bool(rule.expr and (rule.maximum not in (None, "") or rule.minimum not in (None, "")))
+from .resolution import DEFAULT_SOURCE_PRIORITY, ResolvedRule, normalize_source_priority, resolve_rule_group, rule_match_key, source_route
 
 
 def _definitions(device: Device) -> list[dict[str, object]]:
@@ -89,29 +50,27 @@ def build_check_matrix(
     rules: Iterable[Rule] = (),
     source_priority: list[str] | None = None,
 ) -> list[dict[str, object]]:
-    priority = source_priority or DEFAULT_SOURCE_PRIORITY
-    indexed: dict[tuple[str, tuple[str, str]], list[Rule]] = {}
+    priority = normalize_source_priority(source_priority)
+    indexed: dict[tuple[str, tuple[str, ...]], list[Rule]] = {}
     for rule in rules:
-        pair = _pair(rule.expr)
-        if pair is None:
+        target, kind, pair = rule_match_key(rule)
+        if target != device.name.lower():
             continue
-        key = (rule.limit_kind, tuple(item.lower() for item in pair))
+        key = (kind, pair)
         indexed.setdefault(key, []).append(rule)
     matrix: list[dict[str, object]] = []
     for index, definition in enumerate(_definitions(device)):
         kind = str(definition["limit_kind"])
         raw_pair = definition["pair"]
-        pair = tuple(item.lower() for item in raw_pair) if isinstance(raw_pair, list) and len(raw_pair) == 2 else ("", "")
+        pair = tuple(item.lower() for item in raw_pair) if isinstance(raw_pair, list) and len(raw_pair) == 2 else ()
         matches = indexed.get((kind, pair), [])
         if not matches and kind == "terminal_voltage":
             matches = [rule for rule in rules if rule.target == device.name and rule.limit_kind == kind]
-        ordered = sorted(matches, key=lambda rule: priority.index(_source_key(rule)) if _source_key(rule) in priority else len(priority))
-        chosen = ordered[0] if ordered else None
-        statuses = {_status(rule) for rule in ordered}
-        conflict = len({(rule.maximum, rule.minimum) for rule in ordered}) > 1
+        resolved: ResolvedRule = resolve_rule_group(matches, priority)
+        chosen = resolved.chosen
         status = str(definition.get("status", "missing" if definition.get("applicable", True) else "not_applicable"))
         if chosen:
-            status = "conflict" if conflict else _status(chosen)
+            status = resolved.status
         item: dict[str, object] = {
             "matrix_id": f"{device.name}:{kind}:{index}",
             "name": kind,
@@ -120,15 +79,25 @@ def build_check_matrix(
             "applicable": bool(definition.get("applicable", True)),
             "status": status,
             "reason": str(definition.get("reason", "")),
-            "route": _source_key(chosen) if chosen else "inference",
+            "route": resolved.route if chosen else "inference",
             "source": chosen.source.to_dict() if chosen and chosen.source else None,
             "source_candidates": [
-                {"rule_id": rule.rule_id, "route": _source_key(rule), "maximum": rule.maximum, "minimum": rule.minimum, "source": rule.source.to_dict() if rule.source else None}
-                for rule in ordered
+                {
+                    "rule_id": rule.rule_id,
+                    "route": source_route(rule),
+                    "status": rule.effective("status"),
+                    "confidence": rule.confidence,
+                    "enabled": rule.effective("enabled"),
+                    "maximum": rule.effective("maximum"),
+                    "minimum": rule.effective("minimum"),
+                    "source": rule.source.to_dict() if rule.source else None,
+                }
+                for rule in resolved.candidates
             ],
-            "maximum": chosen.maximum if chosen else None,
-            "minimum": chosen.minimum if chosen else None,
-            "rule_ids": [rule.rule_id for rule in ordered],
+            "maximum": chosen.effective("maximum") if chosen else None,
+            "minimum": chosen.effective("minimum") if chosen else None,
+            "rule_ids": [rule.rule_id for rule in resolved.candidates],
+            "conflict": resolved.conflict,
         }
         matrix.append(item)
     return matrix
