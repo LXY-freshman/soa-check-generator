@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+from io import BytesIO
 import json
 import mimetypes
 import os
@@ -22,6 +23,7 @@ from .classify import apply_port_metadata, classify_device
 from .export import model_soa_export_metadata, project_json, render_spectre, select_rules
 from .inference import model_rule_candidates, non_mos_rule_candidates
 from .matrix import refresh_profiles
+from .manual import parse_manual_rules
 from .models import ExportSet, Rule, SourceEvidence
 from .resolution import normalize_source_priority, resolve_rule_groups
 from .parsers import (
@@ -167,7 +169,24 @@ def quick_check(
 
 
 def _read_local(path: str) -> str:
-    return Path(path).read_text(encoding="utf-8", errors="replace")
+    file_path = Path(path)
+    if file_path.suffix.lower() == ".pdf":
+        return _extract_pdf(file_path.read_bytes(), path)
+    return file_path.read_text(encoding="utf-8", errors="replace")
+
+
+def _extract_pdf(data: bytes, source_path: str) -> str:
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        PdfReader = None  # type: ignore[assignment]
+    if PdfReader is not None:
+        try:
+            reader = PdfReader(BytesIO(data))
+            return "\f".join(page.extract_text() or "" for page in reader.pages)
+        except Exception as exc:
+            raise RuntimeError(f"无法提取 PDF 文本：{source_path}；请确认文件未加密。") from exc
+    raise RuntimeError("当前环境缺少 PDF 文本提取器，请安装 pypdf 后重试。")
 
 
 def _ssh_run(source: dict[str, Any], remote_command: str) -> subprocess.CompletedProcess[str]:
@@ -219,6 +238,12 @@ def _ssh_run(source: dict[str, Any], remote_command: str) -> subprocess.Complete
 
 
 def _read_ssh(source: dict[str, Any], path: str) -> str:
+    if Path(path).suffix.lower() == ".pdf":
+        encoded = _ssh_run(source, f"base64 -w0 -- {shlex.quote(path)}").stdout.strip()
+        try:
+            return _extract_pdf(base64.b64decode(encoded), path)
+        except (ValueError, RuntimeError) as exc:
+            raise RuntimeError(f"无法读取远程 PDF 文本：{path}；请确认远程文件可读且未加密。") from exc
     command = f"cat -- {shlex.quote(path)}"
     return _ssh_run(source, command).stdout
 
@@ -295,6 +320,7 @@ def parse_source(source: dict[str, Any], adapter_config: dict[str, Any] | None =
             device.parameter_confidence = "confirmed"
         device.source = SourceEvidence(path=path, line=line, mechanism="unknown", note="模型定义")
         devices.append(device)
+    rules.extend(parse_manual_rules(text, path, devices))
     devices = merge_devices(devices, rules)
     apply_adapter_config(devices, rules, adapter_config)
     candidates = topology_rule_candidates(devices, rules, path)
@@ -337,6 +363,7 @@ def parse_text(text: str, path: str, adapter_config: dict[str, Any] | None = Non
             device.parameter_confidence = "confirmed"
         device.source = SourceEvidence(path=path, line=line, mechanism="unknown", note="模型定义")
         devices.append(device)
+    rules.extend(parse_manual_rules(text, path, devices))
     devices = merge_devices(devices, rules)
     apply_adapter_config(devices, rules, adapter_config)
     rules.extend(topology_rule_candidates(devices, rules, path))
@@ -375,6 +402,7 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
     seen_rules: set[tuple[str, str, str, str | None, str | None]] = set()
     file_results: list[dict[str, Any]] = []
     evidence: list[dict[str, Any]] = []
+    document_sources: list[tuple[str, str]] = []
     for source in sources:
         path = str(source.get("path", ""))
         if path in seen_paths:
@@ -383,6 +411,8 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
         text = read_source(source)
         lower = path.lower()
         kind = str(source.get("candidate_kind", ""))
+        if kind == "document" or lower.endswith((".pdf", ".txt")) or "readme" in lower:
+            document_sources.append((path, text))
         is_device_list = kind == "device_list" or "devicelist" in lower or lower.endswith("device_list")
         parsed_devices = parse_device_list(text, path) if is_device_list else []
         parsed_rules = [] if is_device_list else parse_spectre_asserts(text, path)
@@ -435,6 +465,21 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
         file_results.append(file_result)
         evidence.append(file_result)
     devices = merge_devices(devices, rules)
+    if document_sources:
+        known_devices = {device.name: device for device in devices}
+        for document_path, document_text in document_sources:
+            manual_rules = parse_manual_rules(document_text, document_path, known_devices.values())
+            for rule in manual_rules:
+                key = (rule.target, rule.name, rule.expr, rule.maximum, rule.minimum)
+                if key in seen_rules:
+                    continue
+                seen_rules.add(key)
+                rules.append(rule)
+            result = next((item for item in file_results if item.get("path") == document_path), None)
+            if result is not None and manual_rules:
+                result["manual_rule_count"] = len(manual_rules)
+                result["rule_count"] = int(result.get("rule_count", 0)) + len(manual_rules)
+                result["status"] = "已提取文档限值"
     apply_adapter_config(devices, rules, adapter_config)
     topology = topology_rule_candidates(devices, rules)
     for rule in topology:
@@ -557,9 +602,12 @@ class Handler(BaseHTTPRequestHandler):
                 rules: list[Rule] = []
                 seen_rules: set[tuple[str, str, str, str | None, str | None]] = set()
                 file_results: list[dict[str, Any]] = []
+                document_sources: list[tuple[str, str]] = []
                 for item in body.get("files", []):
                     path_value = str(item.get("path", "browser-file"))
                     text_value = str(item.get("text", ""))
+                    if item.get("kind") == "document" or path_value.lower().endswith((".pdf", ".txt")) or "readme" in path_value.lower():
+                        document_sources.append((path_value, text_value))
                     is_device_list = item.get("kind") == "device_list" or path_value.lower().endswith((".devicelist", "device_list"))
                     file_devices = parse_device_list(text_value, path_value) if is_device_list else []
                     file_rules = [] if is_device_list else parse_spectre_asserts(text_value, path_value)
@@ -614,6 +662,21 @@ class Handler(BaseHTTPRequestHandler):
                             seen_rules.add(key)
                             rules.append(rule)
                 devices = merge_devices(devices, rules)
+                if document_sources:
+                    known_devices = {device.name: device for device in devices}
+                    for document_path, document_text in document_sources:
+                        manual_rules = parse_manual_rules(document_text, document_path, known_devices.values())
+                        for rule in manual_rules:
+                            key = (rule.target, rule.name, rule.expr, rule.maximum, rule.minimum)
+                            if key in seen_rules:
+                                continue
+                            seen_rules.add(key)
+                            rules.append(rule)
+                        result = next((item for item in file_results if item.get("path") == document_path), None)
+                        if result is not None and manual_rules:
+                            result["manual_rule_count"] = len(manual_rules)
+                            result["rule_count"] = int(result.get("rule_count", 0)) + len(manual_rules)
+                            result["status"] = "已提取文档限值"
                 apply_adapter_config(devices, rules, body.get("adapter_config"))
                 topology = topology_rule_candidates(devices, rules)
                 for rule in topology:

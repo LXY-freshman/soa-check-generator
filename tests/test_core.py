@@ -2,10 +2,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from soa_generator.classify import classify_device
+from soa_generator.classify import apply_port_metadata, classify_device
 from soa_generator.adapters import apply_adapter_config
 from soa_generator.export import ExportSet, model_soa_export_metadata, project_json, render_spectre, select_rules
 from soa_generator.models import Device, Rule, SourceEvidence
+from soa_generator.manual import parse_manual_rules
 from soa_generator.parsers import detect_model_soa, parse_device_list, parse_model_definitions, parse_model_limits, parse_model_parameters, parse_spectre_asserts, parse_subckt_dependencies
 from soa_generator.resolution import resolve_rule_groups
 from soa_generator.schema import validate_adapter_config, validate_project_payload
@@ -217,6 +218,29 @@ esd6_pnp_nbl
             }])
             self.assertEqual(payload["summary"]["files"], 1)
             self.assertEqual(payload["devices"][0]["isolation_voltage"], 30.0)
+
+    def test_manual_text_extracts_explicit_limits_but_skips_curves(self) -> None:
+        device = classify_device("nld12_iso_ckt")
+        apply_port_metadata(device, ["d", "g", "bs", "nbl", "psub"])
+        text = """nld12_iso_ckt Vgs max 5.5 V\n+nld12_iso_ckt Vds SOA curve around 23.9-28.8 V\n+nld12_iso_ckt gate rating 5 V\n+\f\nnld12_iso_ckt Vgd maximum 5.5 V\n+"""
+        rules = parse_manual_rules(text, "manual.pdf", [device])
+        self.assertEqual(len(rules), 3)
+        self.assertEqual(rules[0].maximum, "5.5")
+        self.assertEqual(rules[0].terminal_pair, ["g", "bs"])
+        self.assertEqual(rules[0].source.page, 1)
+        self.assertEqual(rules[1].maximum, "5")
+        self.assertEqual(rules[2].source.page, 2)
+        self.assertFalse(any(rule.limit_kind == "Vds" for rule in rules))
+
+    def test_manual_text_source_enters_profile_matrix(self) -> None:
+        payload = parse_text(
+            "subckt nld12_iso_ckt (d g bs nbl psub)\nends nld12_iso_ckt\n"
+            "nld12_iso_ckt Vgs max 5.5 V\n",
+            "manual.txt",
+        )
+        matrix = next(item for item in payload["devices"][0]["check_matrix"] if item["limit_kind"] == "Vgs")
+        self.assertEqual(matrix["route"], "document")
+        self.assertEqual(matrix["maximum"], "5.5")
 
     def test_model_ports_and_isolation_candidate(self) -> None:
         fixture = Path(__file__).parent / "fixtures" / "model_ports.scs"

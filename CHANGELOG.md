@@ -23,6 +23,7 @@
 - 扩展物理检查矩阵：区分 LDMOS/DEMOS 的 BS 体源端和独立栅极电压，增加体二极管、BJT 三端、电阻/二极管正向检查、隔离到体端/漏极候选，以及模型 `jmax/current_density` 候选。
 - 明确端口语义：`PSUB` 记录为大衬底 `bulk_substrate`，`NBL/PEPI/ISO` 记录为隔离结构；普通带 PSUB 的 MOS 不再因衬底端口被判为隔离器件。
 - 扩展 `soa-adapter/v1.check_rules`，允许把工艺手册限值作为带路径、页码和备注的 `documented` 证据接入矩阵和来源冲突选择。
+- 增加文本/PDF 手册限值提取；明确的 `Vgs/Vds/Vbd`、隔离和电流密度行会绑定到器件端口语义，曲线和典型范围不会被自动改写成 SOA 阈值。
 
 ## Unreleased
 
