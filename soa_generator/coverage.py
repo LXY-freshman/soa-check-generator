@@ -19,6 +19,11 @@ def pdk_coverage(
     route_counts = Counter(str(rule.get("route", "unknown")) for rule in rule_list)
     status_counts = Counter(str(rule.get("status", rule.get("confidence", "unknown"))) for rule in rule_list)
     source_kind_counts = Counter(str(source.get("kind", "unknown")) for source in source_list)
+    model_backed = sum(bool(device.get("model_sources")) for device in device_list)
+    device_list_only = sum(
+        bool((device.get("source") or {}).get("mechanism") == "manual_table") and not device.get("model_sources")
+        for device in device_list
+    )
     matrix_status_counts: Counter[str] = Counter()
     device_reports: list[dict[str, object]] = []
     for device in device_list:
@@ -37,6 +42,7 @@ def pdk_coverage(
             "profile_completeness": device.get("profile_completeness", 0),
             "ports": list(device.get("ports") or []),
             "port_roles": dict(device.get("port_roles") or {}),
+            "model_sources": list(device.get("model_sources") or []),
             "applicable_checks": len(applicable),
             "complete_checks": len(complete),
             "missing_checks": [item.get("limit_kind") for item in missing],
@@ -56,6 +62,8 @@ def pdk_coverage(
             "matrix_statuses": dict(matrix_status_counts),
             "devices_with_missing_checks": sum(bool(item["missing_checks"]) for item in device_reports),
             "devices_with_conflicts": sum(bool(item["conflict_checks"]) for item in device_reports),
+            "model_backed_devices": model_backed,
+            "device_list_only_devices": device_list_only,
         },
         "sources": {"kinds": dict(source_kind_counts)},
         "devices": device_reports,

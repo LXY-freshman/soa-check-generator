@@ -248,6 +248,22 @@ esd6_pnp_nbl
             self.assertEqual(payload["summary"]["files"], 1)
             self.assertEqual(payload["devices"][0]["isolation_voltage"], 30.0)
 
+    def test_model_source_is_preserved_when_merged_with_device_list(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            device_path = Path(directory) / "devices.devicelist"
+            model_path = Path(directory) / "models.scs"
+            device_path.write_text("****** MOS ******\nn50_ckt\n", encoding="utf-8")
+            model_path.write_text("subckt n50_ckt (d g s b)\nends n50_ckt\n", encoding="utf-8")
+            payload = parse_sources([
+                {"kind": "local", "path": str(device_path), "candidate_kind": "device_list"},
+                {"kind": "local", "path": str(model_path), "candidate_kind": "model_spectre"},
+            ])
+        device = next(item for item in payload["devices"] if item["name"] == "n50_ckt")
+        self.assertEqual(device["ports"], ["d", "g", "s", "b"])
+        self.assertEqual(device["model_sources"][0]["kind"], "model_spectre")
+        self.assertEqual(payload["coverage"]["summary"]["model_backed_devices"], 1)
+        self.assertEqual(payload["coverage"]["summary"]["device_list_only_devices"], 0)
+
     def test_manual_text_extracts_explicit_limits_but_skips_curves(self) -> None:
         device = classify_device("nld12_iso_ckt")
         apply_port_metadata(device, ["d", "g", "bs", "nbl", "psub"])

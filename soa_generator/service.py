@@ -320,6 +320,7 @@ def parse_source(source: dict[str, Any], adapter_config: dict[str, Any] | None =
         if device.model_parameters:
             device.parameter_confidence = "confirmed"
         device.source = SourceEvidence(path=path, line=line, mechanism="unknown", note="模型定义")
+        device.model_sources = [{"path": path, "line": line, "kind": "model_spectre"}]
         devices.append(device)
     rules.extend(parse_manual_rules(text, path, devices))
     devices = merge_devices(devices, rules)
@@ -365,6 +366,7 @@ def parse_text(text: str, path: str, adapter_config: dict[str, Any] | None = Non
         if device.model_parameters:
             device.parameter_confidence = "confirmed"
         device.source = SourceEvidence(path=path, line=line, mechanism="unknown", note="模型定义")
+        device.model_sources = [{"path": path, "line": line, "kind": "model_spectre"}]
         devices.append(device)
     rules.extend(parse_manual_rules(text, path, devices))
     devices = merge_devices(devices, rules)
@@ -456,6 +458,7 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
                 mechanism="model_internal" if has_model_soa else "unknown",
                 note="模型定义" + (f"；{model_soa['note']}" if has_model_soa else ""),
             )
+            device.model_sources = [{"path": path, "line": line, "kind": kind or "model_spectre"}]
             source_devices.append(device)
             devices.append(device)
         candidates = topology_rule_candidates(source_devices, [*rules, *parsed_rules], path)
@@ -655,6 +658,7 @@ class Handler(BaseHTTPRequestHandler):
                             mechanism="model_internal" if model_soa["enabled"] else "unknown",
                             note="模型定义" + (f"；{model_soa['note']}" if model_soa["enabled"] else ""),
                         )
+                        device.model_sources = [{"path": path_value, "line": line, "kind": item.get("kind", "model_spectre")}]
                         model_devices.append(device)
                         devices.append(device)
                     file_results[-1].update(

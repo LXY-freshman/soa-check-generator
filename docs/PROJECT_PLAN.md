@@ -36,6 +36,7 @@
 - [x] 文本/PDF 手册中的明确器件限值提取，保留页码和原文证据；曲线/典型值不自动转换为单一阈值
 - [x] 对 BCDA V1.3 已解压目录建立脱敏真实 PDK 覆盖基线
 - [x] 解析结果提供 PDK 覆盖摘要和 `/api/coverage` 明细接口
+- [x] 器件档案保留模型文件来源，并报告器件列表与模型定义的匹配覆盖率
 - [x] 模型 `subckt/model` 基础识别和模型内 SOA 线索
 - [x] 区分普通 `bsource` 与 `gsoa`/`soa_*` 模型内 SOA，并显示逐文件解析结果
 - [x] Spectre `subckt`/`inline subckt` 端口解析

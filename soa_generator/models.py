@@ -46,6 +46,7 @@ class Device:
     model_limits: list[dict[str, str]] = field(default_factory=list)
     parameter_confidence: str = "missing"
     aliases: list[str] = field(default_factory=list)
+    model_sources: list[dict[str, Any]] = field(default_factory=list)
     source: SourceEvidence | None = None
     soa_status: str = "unknown"
     associated_devices: list[str] = field(default_factory=list)

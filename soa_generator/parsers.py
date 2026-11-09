@@ -362,6 +362,7 @@ def merge_devices(devices: Iterable[Device], rules: Iterable[Rule]) -> list[Devi
             current.port_confidence = "confirmed"
         current.model_parameters.update(incoming.model_parameters)
         current.model_limits.extend(item for item in incoming.model_limits if item not in current.model_limits)
+        current.model_sources.extend(item for item in incoming.model_sources if item not in current.model_sources)
         current.associated_devices = list(dict.fromkeys([*current.associated_devices, *incoming.associated_devices]))
         if incoming.parameter_confidence == "confirmed":
             current.parameter_confidence = "confirmed"
