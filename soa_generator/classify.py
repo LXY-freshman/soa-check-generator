@@ -104,13 +104,6 @@ def apply_port_metadata(device: Device, ports: list[str]) -> Device:
     for marker in topology_from_ports(cleaned):
         if marker not in device.topology:
             device.topology.append(marker)
-    # A model with explicit isolation terminals has a useful candidate even
-    # when the PDK does not publish a numeric isolation rating. Keep the
-    # candidate visibly inferred; it must not silently replace a source rule.
-    if device.isolation_voltage is None and device.family_voltage is not None:
-        if any(marker in device.topology for marker in ("iso", "isub", "nbl", "pepi", "hvnwell", "hvbn", "dpw", "ddnw")):
-            device.isolation_voltage = round(device.family_voltage * 1.10, 6)
-            device.isolation_confidence = "inferred"
     return device
 
 

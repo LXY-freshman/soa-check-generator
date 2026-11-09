@@ -1,18 +1,19 @@
 # BCDA V1.3 覆盖基线
 
-本次只读验证使用远程 BCDA V1.3 已解压目录中的三类文件：器件列表、Spectre 原生 SOA 文件和 HV MOS Spectre 模型。原始文件只在临时目录中解析，没有进入 Git。
+本次只读验证使用远程 BCDA V1.3 已解压目录中的 17 个文件：器件列表、Spectre 原生 SOA 文件和 `models/spectre` 下全部 15 个 `.mdl/.ckt/.lib` 文件。原始文件只在临时目录中解析，没有进入 Git。
 
 ## 统计
 
-- 器件：409
-- 规则：1913
+- 器件：673
+- 规则：2368
 - 原生 Spectre SOA：1526
-- 拓扑候选：99
-- 推断候选：288
-- 模型有明确来源的器件：193
-- 仅在器件列表中、尚未匹配模型文件的器件：216
-- 物理检查矩阵状态：`source` 428、`inferred` 212、`conflict` 62、`missing` 1272、`not_applicable` 143
-- 器件分类：MOS 54、LDMOS 184、DEMOS 7、二极管 63、BJT 33、电阻 47、Varactor 10、电容 4、未知 7
+- 拓扑候选：62
+- 推断候选：534
+- 空值候选：246
+- 模型有明确来源的器件：650
+- 仅在器件列表中、尚未匹配模型文件的器件：23
+- 物理检查矩阵状态：`source` 515、`inferred` 251、`conflict` 92、`missing` 2026、`not_applicable` 266
+- 器件分类：MOS 74、LDMOS 184、DEMOS 7、二极管 87、BJT 212、电阻 71、Varactor 10、电容 10、未知 18
 
 ## 真实器件核对
 
@@ -22,7 +23,8 @@
 | `nld12_ls_ckt` | `D/G/BS` | enriched | 没有隔离端口；`BS` 被识别为体源端 |
 | `nde12_iso_ckt` | `D/G/S/B/NBL/PSUB` | enriched | 原生 `Vgs/Vbd/Vgb` 已绑定；仍有完整值缺失和一处来源冲突 |
 | `n50_iso_ckt` | 未从本轮模型文件补齐 | skeleton | 器件列表有名称，但端口档案需要更多模型文件或 CDF/OA 信息 |
-| `n18_iso_ckt` | 未从本轮模型文件补齐 | skeleton | 原生 `Vgs` 已绑定，其他物理检查仍需端口证据 |
+| `n18_iso_ckt` | `D/G/S/B/NBL/PSUB` | enriched | 端口来自 MIS Spectre 模型；原生 `Vgs/Vbs/Vbd/Vgb` 已绑定；Vds 曲线留在原生表达式中；NBL 隔离值为空待确认 |
+| `n50_iso_ckt` | `D/G/S/B/NBL/PSUB` | enriched | 端口来自 MIS Spectre 模型；原生 `Vgs/Vbs/Vbd/Vgb` 已绑定，Vbs 与标量模型候选有冲突；NBL 隔离值为空待确认 |
 
 ## 解释
 
@@ -30,4 +32,8 @@
 
 `missing` 不是解析失败总数。它包含物理矩阵中适用但尚未获得可靠数值的检查，正是后续补模型端口、手册限值和工艺适配器的工作清单。
 
-模型来源链已验证：`nld12_iso_ckt` 的端口档案记录了 HV MOS Spectre 模型文件和定义行号；器件列表与模型文件的匹配覆盖率目前为 193/409。剩余器件需要继续选择同一 PDK 下的其他 Spectre/HSPICE 模型文件，或等待 CDF/OA 端口来源接入。
+模型来源链已验证：`nld12_iso_ckt` 的端口档案记录了 HV MOS Spectre 模型文件和定义行号。只选 HV MOS 文件时匹配率为 193/409；加载完整 Spectre 模型目录后提升到 650/673。
+
+加载整个 Spectre 模型目录后，覆盖升到 650/673。剩余 23 个器件包括 7 个 pocket helper，以及器件列表中的通用 NPN/PNP cell；模型文件中对应 BJT 实例通常带面积参数名（例如 `pnp18a100_mis_ckt`），通用 cell 到具体参数模型的映射需要 CDF/OA 信息，当前不自动猜测。该路径按项目约束继续暂停。
+
+对只有 `iso` 拓扑、没有隔离等级数字的器件，不再把 MOS 族电压当隔离耐压。矩阵保留 `NBL-PSUB/NBL-B/NBL-D` 空值检查，直到手册、原生 SOA 或用户提供独立隔离等级。该保护现已在真实 n18/n50/nld12/nde12 档案中验证。

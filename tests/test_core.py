@@ -90,6 +90,15 @@ esd6_pnp_nbl
         }
         self.assertTrue({("nbl", "psub"), ("nbl", "bs"), ("nbl", "d")} <= isolation_pairs)
 
+    def test_generic_iso_name_does_not_infer_isolation_rating_from_family_voltage(self) -> None:
+        payload = parse_text("subckt n18_iso_ckt (d g s b nbl psub)\nends n18_iso_ckt\n", "generic_iso.scs")
+        device = payload["devices"][0]
+        self.assertIsNone(device["isolation_voltage"])
+        isolation = [rule for rule in payload["rules"] if rule["limit_kind"] == "isolation_bv"]
+        self.assertTrue(isolation)
+        self.assertTrue(all(rule["maximum"] is None for rule in isolation))
+        self.assertTrue(all(rule["status"] == "missing" and not rule["enabled"] for rule in isolation))
+
     def test_physical_matrix_covers_non_mos_terminal_checks(self) -> None:
         text = """inline subckt dio5 (p n)\ninline subckt npn5 (c b e)\ninline subckt rpoly (n1 n2 sub)\ninline subckt mim_5v (top bot)\n"""
         payload = parse_text(text, "non_mos_matrix.scs")
@@ -262,6 +271,38 @@ esd6_pnp_nbl
         self.assertEqual(device["ports"], ["d", "g", "s", "b"])
         self.assertEqual(device["model_sources"][0]["kind"], "model_spectre")
         self.assertEqual(payload["coverage"]["summary"]["model_backed_devices"], 1)
+        self.assertEqual(payload["coverage"]["summary"]["device_list_only_devices"], 0)
+
+    def test_multiple_model_sources_complete_iso_mos_profiles_without_fake_ratings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            device_path = root / "devices.devicelist"
+            soa_path = root / "soa_spe.mdl"
+            model_path = root / "mis_spe.mdl"
+            device_path.write_text("****** MOS ******\nn18_iso_ckt\nn50_iso_ckt\n", encoding="utf-8")
+            soa_path.write_text(
+                'v18 assert sub=n18_iso_ckt expr="v(g,s)" max=1.98 min=-1.98\n'
+                'v50 assert sub=n50_iso_ckt expr="v(g,s)" max=5.5 min=-5.5\n',
+                encoding="utf-8",
+            )
+            model_path.write_text(
+                "inline subckt n18_iso_ckt (d g s b nbl psub)\n"
+                "inline subckt n50_iso_ckt (d g s b nbl psub)\n",
+                encoding="utf-8",
+            )
+            payload = parse_sources([
+                {"kind": "local", "path": str(device_path), "candidate_kind": "device_list"},
+                {"kind": "local", "path": str(soa_path), "candidate_kind": "spectre_soa"},
+                {"kind": "local", "path": str(model_path), "candidate_kind": "model_spectre"},
+            ])
+        profiles = {device["name"]: device for device in payload["devices"]}
+        for name in ("n18_iso_ckt", "n50_iso_ckt"):
+            profile = profiles[name]
+            self.assertEqual(profile["ports"], ["d", "g", "s", "b", "nbl", "psub"])
+            self.assertEqual(profile["model_sources"][0]["path"], str(model_path))
+            self.assertIsNone(profile["isolation_voltage"])
+            self.assertTrue(all(item["maximum"] is None for item in profile["check_matrix"] if item["limit_kind"] == "isolation_bv"))
+        self.assertEqual(payload["coverage"]["summary"]["model_backed_devices"], 2)
         self.assertEqual(payload["coverage"]["summary"]["device_list_only_devices"], 0)
 
     def test_manual_text_extracts_explicit_limits_but_skips_curves(self) -> None:

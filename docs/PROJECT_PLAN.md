@@ -38,6 +38,7 @@
 - [x] 解析结果提供 PDK 覆盖摘要和 `/api/coverage` 明细接口
 - [x] 器件档案保留模型文件来源，并报告器件列表与模型定义的匹配覆盖率
 - [x] 模型 `subckt/model` 基础识别和模型内 SOA 线索
+- [x] 同一 PDK 多个已选 Spectre 模型文件合并到统一器件档案，并保留逐文件来源
 - [x] 区分普通 `bsource` 与 `gsoa`/`soa_*` 模型内 SOA，并显示逐文件解析结果
 - [x] Spectre `subckt`/`inline subckt` 端口解析
 - [x] `nbl`/`pepi`/`iso` 隔离拓扑与 `psub` 大衬底端口语义识别

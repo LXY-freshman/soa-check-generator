@@ -269,14 +269,13 @@ def topology_rule_candidates(
     devices: Iterable[Device],
     existing_rules: Iterable[Rule],
     source_path: str = "<inferred>",
-    margin: float = 0.10,
 ) -> list[Rule]:
-    """Create disabled, visibly inferred isolation checks from model ports."""
+    """Create disabled isolation checks from model ports and explicit ratings."""
     existing = {(rule.target, rule.expr.replace(" ", "").lower(), rule.limit_kind) for rule in existing_rules}
     candidates: list[Rule] = []
     for device in devices:
         pairs = _isolation_pairs(device)
-        if not pairs or not device.ports or device.isolation_voltage is None:
+        if not pairs or not device.ports:
             continue
         for left, right in pairs:
             expr = f"v({left},{right})"
@@ -284,11 +283,11 @@ def topology_rule_candidates(
             if key in existing:
                 continue
             named_voltage = isolation_voltage(device.name) is not None
-            value = device.isolation_voltage
+            value = device.isolation_voltage if named_voltage else None
             reason = (
-                f"端口 {left}/{right} 来自模型定义；隔离等级来自器件命名中的电压线索，仍需手册或原生 SOA 确认。"
+                f"端口 {left}/{right} 来自模型定义；隔离等级来自器件命名中的明确电压线索，仍需手册或原生 SOA 确认。"
                 if named_voltage
-                else f"端口 {left}/{right} 来自模型定义；未找到明确隔离耐压，按器件族电压及 {margin:.0%} 策略推断。"
+                else f"端口 {left}/{right} 来自模型定义；器件名称没有隔离电压等级，保留空值等待手册或用户填写。"
             )
             rule = Rule(
                 rule_id=f"inferred:isolation:{device.name}:{left}:{right}",
@@ -296,7 +295,7 @@ def topology_rule_candidates(
                 target=device.name,
                 target_kind="sub",
                 expr=expr,
-                maximum=f"{value:g}",
+                maximum=f"{value:g}" if value is not None else None,
                 message=f"SOA Warning - {device.name} isolation voltage candidate exceeded",
                 level="warning",
                 duration="t_trans_hv",
@@ -304,7 +303,7 @@ def topology_rule_candidates(
                 limit_kind="isolation_bv",
                 terminal_pair=[left, right],
                 device_family=device.family,
-                confidence="inferred",
+                confidence="inferred" if value is not None else "missing",
                 enabled=False,
                 source=SourceEvidence(
                     path=source_path,
@@ -312,8 +311,8 @@ def topology_rule_candidates(
                     note=reason,
                 ),
                 notes=[reason, "候选规则默认关闭，请结合工艺手册或原生 SOA 文件确认后再启用。"],
-                status="inferred",
-                route="topology",
+                status="inferred" if value is not None else "missing",
+                route="topology" if value is not None else "missing",
             )
             rule.original = rule.to_dict()
             candidates.append(rule)
