@@ -67,6 +67,8 @@ def topology_from_ports(ports: list[str]) -> list[str]:
         ("hvbn", "hvbn"),
         ("dpw", "dpw"),
         ("ddnw", "ddnw"),
+        ("dnw", "dnw"),
+        ("dnwell", "dnwell"),
     ):
         if port in normalized and marker not in markers:
             markers.append(marker)
@@ -91,6 +93,8 @@ def apply_port_metadata(device: Device, ports: list[str]) -> Device:
         "iso": "isolation_ring", "isub": "isolation_substrate",
         "hvnwell": "isolation_well", "hvbn": "isolation_well",
         "dpw": "isolation_well", "ddnw": "isolation_well",
+        "dnw": "isolation_well", "dnwell": "isolation_well",
+        "pwell": "body", "pw": "body",
         "p": "anode", "pos": "anode", "n": "cathode", "neg": "cathode",
         "c": "collector", "e": "emitter",
     }
@@ -178,7 +182,7 @@ def classify_limit(expr: str, message: str | None = None) -> str:
     match = _VOLTAGE_PAIR.search(expr or "")
     if match:
         pair = frozenset((match.group(1).lower(), match.group(2).lower()))
-        if pair & {"iso", "isub", "nbl", "pepi", "hvnwell", "hvbn", "dpw", "ddnw"}:
+        if pair & {"iso", "isub", "nbl", "pepi", "hvnwell", "hvbn", "dpw", "ddnw", "dnw", "dnwell", "pwell", "pw"}:
             return "isolation_bv"
         voltage_kinds = {
             frozenset(("d", "s")): "Vds", frozenset(("d", "bs")): "Vds",

@@ -8,8 +8,9 @@ from pathlib import Path
 from .discovery import discover_local, summarize_candidates
 from .export import project_json, render_spectre, select_rules
 from .models import ExportSet
-from .parsers import detect_model_soa, merge_devices, parse_device_list, parse_spectre_asserts
+from .parsers import detect_model_soa
 from .schema import validate_adapter_config
+from .service import _rule_from_dict, parse_source
 
 
 def _read(path: str) -> str:
@@ -28,14 +29,11 @@ def command_scan(args: argparse.Namespace) -> int:
 
 
 def command_parse(args: argparse.Namespace) -> int:
-    rules = parse_spectre_asserts(_read(args.path), source_path=args.path)
-    devices = merge_devices([], rules)
-    print(json.dumps({"devices": [item.to_dict() for item in devices], "rules": [item.to_dict() for item in rules]}, ensure_ascii=False, indent=2))
+    print(json.dumps(parse_source({"kind": "local", "path": args.path}), ensure_ascii=False, indent=2))
     return 0
 
 
 def command_export(args: argparse.Namespace) -> int:
-    rules = parse_spectre_asserts(_read(args.path), source_path=args.path)
     adapter = None
     if args.adapter_config:
         adapter = json.loads(_read(args.adapter_config))
@@ -43,6 +41,8 @@ def command_export(args: argparse.Namespace) -> int:
         if issues:
             raise SystemExit("适配器配置无效：" + "；".join(item["message"] for item in issues))
     export_set = ExportSet(name=args.name, formats=args.formats)
+    parsed = parse_source({"kind":"local", "path":args.path}, adapter_config=adapter)
+    rules = [_rule_from_dict(item) for item in parsed["rules"]]
     selected = select_rules(rules, export_set)
     model_sources = []
     for source_path in args.model_source:
@@ -72,6 +72,7 @@ def command_export(args: argparse.Namespace) -> int:
                 model_sources=model_sources,
                 model_soa_mode=args.model_soa_mode,
                 adapter=adapter,
+                devices=parsed["devices"],
             ),
             encoding="utf-8",
         )

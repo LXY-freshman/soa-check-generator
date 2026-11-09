@@ -7,7 +7,7 @@ from typing import Iterable
 from .classify import apply_device_metadata, apply_port_metadata, classify_device, isolation_voltage
 from .models import Device, Rule, SourceEvidence
 from .resolution import expression_measurement_key
-from .topology import isolation_connections
+from .topology import ISOLATION_PORTS, bind_isolation_rule_metadata, isolation_connections
 
 
 _ASSERT_RE = re.compile(r"^(?P<name>\S+)\s+assert\s+(?P<body>.*)$", re.I)
@@ -248,12 +248,101 @@ def detect_model_soa(text: str) -> dict[str, object]:
     return {"enabled": False, "mechanism": None, "line": None, "note": ""}
 
 
+def parse_isolation_junctions(text: str, source_path: str, diode_definitions: Iterable[str] = ()) -> dict[str, list[dict[str, object]]]:
+    """Map explicit diode instances to exposed isolation terminals.
+
+    Two-terminal subckt wrappers are followed only when their pins can be
+    traced to an actual diode model; no model-name polarity guessing is used.
+    """
+    diode_models = {"diode", *(name.lower() for name in diode_definitions)} | {match.group(1).lower() for match in re.finditer(
+        r"(?im)^\s*model\s+(\w+)\s+diode\b", text
+    )}
+    blocks: dict[str, list[tuple[list[str], list[tuple[str, str, str, int]]]]] = {}
+    current: tuple[list[str], list[tuple[str, str, str, int]]] | None = None
+    for line, raw in enumerate(text.splitlines(), 1):
+        subckt = _SUBCKT_RE.match(raw)
+        if subckt:
+            current = (_clean_ports(subckt.group("ports")), [])
+            blocks.setdefault(subckt.group("name"), []).append(current)
+            continue
+        if re.match(r"^\s*ends\b", raw, re.I):
+            current = None
+            continue
+        if current is None:
+            continue
+        instance = re.match(r"^\s*\w+\s*\(\s*([^\s(),]+)[\s,]+([^\s(),]+)\s*\)\s+(\w+)\b", raw)
+        if instance:
+            current[1].append((*instance.groups(), line))
+    wrappers: dict[str, tuple[int, int]] = {}
+    for _pass in range(8):
+        changed = False
+        for name, variants in blocks.items():
+            directions = set()
+            for ports, instances in variants:
+                if len(ports) != 2:
+                    continue
+                normalized = [port.lower() for port in ports]
+                for first, second, master, _line in instances:
+                    direction = (0, 1) if master.lower() in diode_models else wrappers.get(master.lower())
+                    if direction is None:
+                        continue
+                    p, n = (first.lower(), second.lower())[direction[0]], (first.lower(), second.lower())[direction[1]]
+                    if p in normalized and n in normalized and p != n:
+                        directions.add((normalized.index(p), normalized.index(n)))
+            if len(directions) == 1 and name.lower() not in wrappers:
+                wrappers[name.lower()] = next(iter(directions))
+                changed = True
+        if not changed:
+            break
+    result: dict[str, list[dict[str, object]]] = {}
+    for name, variants in blocks.items():
+        found: list[dict[str, object]] = []
+        for ports, instances in variants:
+            normalized = {port.lower(): port for port in ports}
+            for first, second, master, line in instances:
+                direction = (0, 1) if master.lower() in diode_models else wrappers.get(master.lower())
+                if direction is None:
+                    continue
+                values = (first.lower(), second.lower())
+                p, n = values[direction[0]], values[direction[1]]
+                if p not in normalized or n not in normalized or p == n:
+                    continue
+                if not ({p, n} & ISOLATION_PORTS or ({p, n} & {"psub", "sub"} and {p, n} & {"b", "bs", "body"})):
+                    continue
+                edge = {"p_port": normalized[p], "n_port": normalized[n], "mechanism": "pn_junction",
+                        "source": SourceEvidence(path=source_path, line=line, mechanism="model_internal",
+                                                 note=f"模型二极管 {master} 的端口连接；反向为 V(N,P)，正向为 V(P,N)。").to_dict()}
+                if not any(item["p_port"] == edge["p_port"] and item["n_port"] == edge["n_port"] for item in found):
+                    found.append(edge)
+        if found:
+            result[name] = found
+    return result
+
+
+def bind_selected_isolation_models(devices: Iterable[Device], files: list[tuple[str, str]]) -> None:
+    """Resolve diode definitions across explicitly selected model files only."""
+    diode_names = {match.group(1).lower() for _path, text in files for match in re.finditer(
+        r"(?im)^\s*model\s+(\w+)\s+diode\b", text
+    )}
+    by_name = {device.name: device for device in devices}
+    for path, text in files:
+        for name, edges in parse_isolation_junctions(text, path, diode_names).items():
+            if name not in by_name:
+                continue
+            current = by_name[name].isolation_junctions
+            current.extend(edge for edge in edges if edge not in current)
+
+
 def topology_rule_candidates(
     devices: Iterable[Device],
     existing_rules: Iterable[Rule],
     source_path: str = "<inferred>",
 ) -> list[Rule]:
     """Create disabled isolation checks from model ports and explicit ratings."""
+    existing_rules = list(existing_rules)
+    devices = list(devices)
+    for device in devices:
+        bind_isolation_rule_metadata(device, existing_rules)
     existing = {(*expression_measurement_key(rule.target, rule.expr), rule.limit_kind) for rule in existing_rules}
     candidates: list[Rule] = []
     for device in devices:
@@ -263,36 +352,41 @@ def topology_rule_candidates(
         for connection in connections:
             left, right = connection.left, connection.right
             expr = f"v({left},{right})"
-            key = (*expression_measurement_key(device.name, expr), "isolation_bv")
+            kind = connection.limit_kind
+            key = (*expression_measurement_key(device.name, expr), kind)
             if key in existing:
                 continue
             named_voltage = isolation_voltage(device.name) is not None
-            value = device.isolation_voltage if named_voltage else None
+            # A pocket's named rating is an outer rating clue only. Its
+            # internal junction and forward conduction require other evidence.
+            value = device.isolation_voltage if named_voltage and connection.side == "outer" and kind == "isolation_bv" else None
             reason = (
                 f"端口 {left}/{right} 来自模型定义；隔离等级来自器件命名中的明确电压线索，仍需手册或原生 SOA 确认。"
-                if named_voltage
-                else f"端口 {left}/{right} 来自模型定义；器件名称没有隔离电压等级，保留空值等待手册或用户填写。"
+                if value is not None
+                else f"端口 {left}/{right} 来自模型定义；该结没有独立限值，保留空值等待原生 SOA、手册或用户填写。"
             )
             reason = f"{connection.description}；{reason}"
             model_source = next((item.get("path") for item in device.model_sources if item.get("path")), None)
             rule = Rule(
-                rule_id=f"inferred:isolation:{device.name}:{left}:{right}",
-                name=f"candidate_{device.name}_{left}_{right}_isolation_bv",
+                rule_id=f"inferred:isolation:{device.name}:{left}:{right}" if kind == "isolation_bv" else f"inferred:{kind}:{device.name}:{left}:{right}",
+                name=f"candidate_{device.name}_{left}_{right}_{kind}",
                 target=device.name,
                 target_kind="sub",
                 expr=expr,
                 maximum=f"{value:g}" if value is not None else None,
                 message=f"SOA Warning - {device.name} isolation voltage candidate exceeded",
                 level="warning",
-                duration="t_trans_hv",
+                duration=None if kind == "isolation_forward_voltage" else "t_trans_hv",
                 section="soa_generated",
-                limit_kind="isolation_bv",
+                limit_kind=kind,
                 terminal_pair=[left, right],
                 device_family=device.family,
                 confidence="inferred" if value is not None else "missing",
                 enabled=False,
                 source=SourceEvidence(
-                    path=str(model_source or source_path),
+                    path=str((connection.source or {}).get("path") or model_source or source_path),
+                    line=(connection.source or {}).get("line"),
+                    page=(connection.source or {}).get("page"),
                     mechanism="inference",
                     note=reason,
                 ),
@@ -302,6 +396,7 @@ def topology_rule_candidates(
             )
             rule.original = rule.to_dict()
             candidates.append(rule)
+            existing.add(key)
     return candidates
 
 
@@ -348,6 +443,9 @@ def merge_devices(devices: Iterable[Device], rules: Iterable[Rule]) -> list[Devi
         current.model_parameters.update(incoming.model_parameters)
         current.model_limits.extend(item for item in incoming.model_limits if item not in current.model_limits)
         current.model_sources.extend(item for item in incoming.model_sources if item not in current.model_sources)
+        current.isolation_junctions.extend(item for item in incoming.isolation_junctions if item not in current.isolation_junctions)
+        if incoming.isolation_type != "unknown":
+            current.isolation_type = incoming.isolation_type
         current.associated_devices = list(dict.fromkeys([*current.associated_devices, *incoming.associated_devices]))
         if incoming.parameter_confidence == "confirmed":
             current.parameter_confidence = "confirmed"

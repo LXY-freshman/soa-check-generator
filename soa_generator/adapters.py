@@ -31,6 +31,12 @@ def apply_adapter_config(
                 device.family = str(item["family"])
             if item.get("scope"):
                 device.scope = str(item["scope"])
+            if item.get("isolation_type"):
+                device.isolation_type = str(item["isolation_type"])
+            device.port_roles.update(item.get("port_roles", {}))
+            for edge in item.get("isolation_junctions", []):
+                if edge not in device.isolation_junctions:
+                    device.isolation_junctions.append(dict(edge))
             if item.get("family_voltage") is not None:
                 device.family_voltage = float(item["family_voltage"])
             if item.get("gate_voltage") is not None:

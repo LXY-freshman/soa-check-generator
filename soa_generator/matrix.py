@@ -52,18 +52,22 @@ def _metric_item(device: Device, kind: str, port_names: tuple[str, ...], reason:
 def _isolation_definitions(device: Device) -> list[dict[str, object]]:
     has_isolation = bool(set(token.lower() for token in device.topology) & ISOLATION_PORTS) or bool(set(port.lower() for port in device.ports) & ISOLATION_PORTS)
     result = [
-        {"limit_kind": "isolation_bv", "pair": [connection.left, connection.right],
+        {"limit_kind": connection.limit_kind, "pair": [connection.left, connection.right],
          "applicable": True, "status": "missing", "reason": connection.description,
-         "isolation_side": connection.side}
+         "isolation_side": connection.side, "structure_confirmed": connection.verified}
         for connection in isolation_connections(device)
     ]
+    if result and device.isolation_type != "dielectric" and not any(item["isolation_side"] == "outer" for item in result):
+        result.append({"limit_kind": "isolation_bv", "pair": ["隔离层", "PSUB/大衬底（节点待确认）"],
+                       "isolation_side": "outer", "applicable": True, "status": "missing",
+                       "reason": "外侧大衬底节点未确认或未暴露；保留覆盖缺口，不导出虚构 PSUB 表达式。"})
     if not result:
         result.append({
             "limit_kind": "isolation_bv",
             "pair": ["iso/nbl/pepi", "b/bs/psub"],
-            "applicable": has_isolation,
-            "reason": "隔离拓扑已识别，但模型端口尚未补齐" if has_isolation else "器件没有隔离环、NBL 或外延端口",
-            "status": "missing" if has_isolation else "not_applicable",
+            "reason": "介质隔离：不套用 PN 结耐压/正向导通规则，需独立介质规格" if device.isolation_type == "dielectric" else "隔离拓扑已识别，但模型端口尚未补齐" if has_isolation else "器件没有隔离环、NBL 或外延端口",
+            "status": "missing" if has_isolation and device.isolation_type != "dielectric" else "not_applicable",
+            "applicable": has_isolation and device.isolation_type != "dielectric",
         })
     return result
 
@@ -90,7 +94,7 @@ def _mos_definitions(device: Device) -> list[dict[str, object]]:
     elif device.family in {"ldmos", "demos"}:
         items.append(_pair_item(device, "body_diode_forward", drain, source, "LDMOS/DEMOS 体二极管正向导通"))
     items.append(_metric_item(device, "current_density", drain, "沟道/漂移区电流密度"))
-    return items + _isolation_definitions(device)
+    return items
 
 
 def _passive_definitions(device: Device) -> list[dict[str, object]]:
@@ -135,8 +139,11 @@ def _passive_definitions(device: Device) -> list[dict[str, object]]:
 
 def _definitions(device: Device) -> list[dict[str, object]]:
     if device.family in {"mos", "ldmos", "demos"}:
-        return _mos_definitions(device)
-    return _passive_definitions(device)
+        return _mos_definitions(device) + _isolation_definitions(device)
+    items = _passive_definitions(device)
+    if device.isolation_junctions or set(device.topology) & ISOLATION_PORTS or any(port.lower() in ISOLATION_PORTS for port in device.ports):
+        items.extend(_isolation_definitions(device))
+    return items
 
 
 def _matches_for_definition(
@@ -179,7 +186,15 @@ def build_check_matrix(
             continue
         indexed.setdefault((kind, pair), []).append(rule)
     matrix: list[dict[str, object]] = []
-    for index, definition in enumerate(_definitions(device)):
+    definitions = _definitions(device)
+    for rule in rule_list:
+        if rule.target != device.name or rule.limit_kind != "isolation_constraint":
+            continue
+        pair = list(rule.terminal_pair)
+        if not any(item["limit_kind"] == "isolation_constraint" and item["pair"] == pair for item in definitions):
+            definitions.append({"limit_kind": "isolation_constraint", "pair": pair, "applicable": True,
+                                "status": "missing", "reason": "工艺资料指定的同电位或复合寄生路径约束"})
+    for index, definition in enumerate(definitions):
         kind = str(definition["limit_kind"])
         raw_pair = definition["pair"]
         matches = _matches_for_definition(device, definition, indexed, rule_list)
@@ -201,6 +216,7 @@ def build_check_matrix(
             "status": status,
             "reason": str(definition.get("reason", "")),
             "isolation_side": str(definition.get("isolation_side", "")),
+            "structure_confirmed": bool(definition.get("structure_confirmed", False)),
             "route": resolved.route if chosen else "inference",
             "source": chosen.source.to_dict() if chosen and chosen.source else None,
             "source_candidates": [

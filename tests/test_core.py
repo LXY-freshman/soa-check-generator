@@ -88,7 +88,8 @@ esd6_pnp_nbl
             for rule in payload["rules"]
             if rule["target"] == "nld12_iso_ckt" and rule["limit_kind"] == "isolation_bv"
         }
-        self.assertTrue({("nbl", "psub"), ("nbl", "bs"), ("nbl", "d")} <= isolation_pairs)
+        self.assertTrue({("nbl", "psub"), ("nbl", "bs")} <= isolation_pairs)
+        self.assertNotIn(("nbl", "d"), isolation_pairs)  # No explicit junction evidence.
 
     def test_generic_iso_name_does_not_infer_isolation_rating_from_family_voltage(self) -> None:
         payload = parse_text("subckt n18_iso_ckt (d g s b nbl psub)\nends n18_iso_ckt\n", "generic_iso.scs")
@@ -106,7 +107,7 @@ esd6_pnp_nbl
         pairs = {tuple(rule.terminal_pair): rule for rule in rules}
         self.assertIn(("iso", "b"), pairs)
         self.assertIn(("iso", "psub"), pairs)
-        self.assertEqual(pairs[("iso", "b")].maximum, "30")
+        self.assertIsNone(pairs[("iso", "b")].maximum)  # Inner BV is independent of the pocket rating.
         self.assertEqual(pairs[("iso", "psub")].maximum, "30")
 
     def test_physical_matrix_covers_non_mos_terminal_checks(self) -> None:
@@ -394,7 +395,7 @@ nld12_ls_ckt
             ["nbl", "psub"],
         )
         self.assertFalse(any(rule["target"] == "n50_hvbn_30v_ckt" and rule["limit_kind"] == "isolation_bv" and rule["terminal_pair"] == ["nbl", "psub"] and rule["confidence"] == "inferred" for rule in payload["rules"]))
-        self.assertTrue(any(rule["target"] == "n50_hvbn_30v_ckt" and rule["limit_kind"] == "isolation_bv" and rule["terminal_pair"] == ["nbl", "b"] and rule["confidence"] == "inferred" for rule in payload["rules"]))
+        self.assertTrue(any(rule["target"] == "n50_hvbn_30v_ckt" and rule["limit_kind"] == "isolation_bv" and rule["terminal_pair"] == ["nbl", "b"] and rule["status"] == "missing" for rule in payload["rules"]))
         pch_candidates = [rule for rule in payload["rules"] if rule["target"] == "pch3d3_nbl_7v_7t_mac"]
         self.assertTrue(any(rule["limit_kind"] == "isolation_bv" and not rule["enabled"] for rule in pch_candidates))
         self.assertEqual(pch_candidates[0]["terminal_pair"], ["nbl", "psub"])

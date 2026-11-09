@@ -13,6 +13,7 @@
 | 模型内 `gsoa/bsource` 与外部 assert 分开 | ADR 0003、PROJECT_PLAN | 已实现 |
 | 端口、隔离环、NBL/PSUB/PEPI、组合器件 | ADR 0006/0007、GLOSSARY | 已实现基础版；端口档案明确区分 `PSUB=bulk_substrate` 与 `NBL/PEPI/ISO=isolation_structure` |
 | HVBN 隔离环对内 body / 对外 PSUB 耐压 | PROJECT_PLAN、BCDE V1.4 回归记录 | 规则候选与矩阵共用端口关系；内外限值独立，界面分别命名；无隔离等级时空值且默认关闭 |
+| 不同工艺和器件族的隔离物理检查 | 隔离结原理研究、PROJECT_PLAN | 已选模型间关联 PN 结定义，分别提供 V(N,P) 反向、V(P,N) 正向候选；支持多层 isub/iso/sub、PEPI/NBL、非 MOS 与工艺适配器；介质隔离排除 PN 模板 |
 | MOS 和非 MOS 模型参数/命名推断候选 | ADR 0005、PROJECT_PLAN | 已实现基础版 |
 | 工艺手册限值作为独立证据参与规则选择 | ADR 0005/0007、适配器文档 | `soa-adapter/v1.check_rules` 已实现，保留路径、页码、备注和 `documented` 置信度 |
 | 直接解析选中的手册文本/PDF | PROJECT_PLAN、GLOSSARY | 已实现行内限值和表头/器件行/续行表格提取；曲线、典型值和范围保留为未转换证据 |

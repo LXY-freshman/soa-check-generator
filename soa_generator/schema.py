@@ -92,6 +92,19 @@ def validate_adapter_config(config: Any) -> list[dict[str, str]]:
         for index, rule in enumerate(rules):
             if not isinstance(rule, dict) or not rule.get("pattern"):
                 issues.append({"code": "adapter_rule", "message": f"device_rules[{index}] 必须包含 pattern。"})
+            if not isinstance(rule, dict):
+                continue
+            isolation_type = rule.get("isolation_type", "unknown")
+            if not isinstance(isolation_type, str) or isolation_type not in {"unknown", "junction", "dielectric"}:
+                issues.append({"code": "isolation_type", "message": f"device_rules[{index}].isolation_type 必须是 unknown、junction 或 dielectric。"})
+            roles = rule.get("port_roles", {})
+            if not isinstance(roles, dict) or any(not isinstance(value, str) for value in roles.values()):
+                issues.append({"code": "port_roles", "message": f"device_rules[{index}].port_roles 必须为端口到角色的对象。"})
+            edges = rule.get("isolation_junctions", [])
+            if not isinstance(edges, list) or any(not isinstance(edge, dict) or not isinstance(edge.get("p_port"), str) or not edge.get("p_port") or not isinstance(edge.get("n_port"), str) or not edge.get("n_port") or edge.get("p_port") == edge.get("n_port") for edge in edges):
+                issues.append({"code": "isolation_junctions", "message": f"device_rules[{index}].isolation_junctions 必须是含不同 p_port/n_port 的 PN 结数组。"})
+            elif any(edge.get("source") is not None and not isinstance(edge["source"], dict) for edge in edges):
+                issues.append({"code": "isolation_source", "message": f"device_rules[{index}] 的隔离结 source 必须是来源对象。"})
     check_rules = config.get("check_rules", [])
     if not isinstance(check_rules, list):
         issues.append({"code": "adapter_check_rules", "message": "check_rules 必须是数组。"})

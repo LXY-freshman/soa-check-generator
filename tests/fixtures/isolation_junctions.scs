@@ -1,0 +1,43 @@
+simulator lang=spectre
+model junction_diode diode bv=60
+
+inline subckt option_isolation (anode cathode)
+dcore (anode cathode) junction_diode
+ends option_isolation
+
+inline subckt nch_demo_iso (d g s b iso sub)
+dinner (b iso) junction_diode
+xouter (sub iso) option_isolation
+ends nch_demo_iso
+
+inline subckt pch_demo_layers (d g s b isub iso sub)
+dinner (isub b) junction_diode
+dmiddle (isub iso) junction_diode
+xouter (sub iso) option_isolation
+ends pch_demo_layers
+
+inline subckt pch_demo_nbl (d g s b pepi nbl psub)
+dinner (pepi b) junction_diode
+dmiddle (pepi nbl) junction_diode
+douter (psub nbl) junction_diode
+ends pch_demo_nbl
+
+inline subckt var_demo_iso (n1 n2 nbl psub)
+douter (psub nbl) junction_diode
+ends var_demo_iso
+
+inline subckt r_demo_iso (in out nbl psub)
+douter (psub nbl) junction_diode
+ends r_demo_iso
+
+inline subckt dio_demo_iso (pos neg nbl psub)
+douter (psub nbl) junction_diode
+ends dio_demo_iso
+
+inline subckt npn_demo_iso (c b e nbl psub)
+douter (psub nbl) junction_diode
+ends npn_demo_iso
+
+inline subckt cap_demo_iso (top bot nbl psub)
+douter (psub nbl) junction_diode
+ends cap_demo_iso

@@ -37,6 +37,8 @@ from .parsers import (
     parse_model_parameters,
     parse_model_limits,
     parse_subckt_dependencies,
+    parse_isolation_junctions,
+    bind_selected_isolation_models,
     parse_spectre_asserts,
     detect_model_soa,
     topology_rule_candidates,
@@ -322,12 +324,14 @@ def parse_source(source: dict[str, Any], adapter_config: dict[str, Any] | None =
     definitions = parse_model_definitions(text)
     model_parameters = parse_model_parameters(text)
     model_limits = parse_model_limits(text)
+    junctions = parse_isolation_junctions(text, path)
     dependencies = parse_subckt_dependencies(text)
     for name, ports, line in definitions:
         device = classify_device(name, "model")
         apply_port_metadata(device, ports)
         device.model_parameters = model_parameters.get(name, {})
         device.model_limits = model_limits.get(name, [])
+        device.isolation_junctions = junctions.get(name, [])
         device.associated_devices = dependencies.get(name, [])
         if device.model_parameters:
             device.parameter_confidence = "confirmed"
@@ -368,12 +372,14 @@ def parse_text(text: str, path: str, adapter_config: dict[str, Any] | None = Non
     source_rule_count = len(rules)
     model_parameters = parse_model_parameters(text)
     model_limits = parse_model_limits(text)
+    junctions = parse_isolation_junctions(text, path)
     dependencies = parse_subckt_dependencies(text)
     for name, ports, line in parse_model_definitions(text):
         device = classify_device(name, "model")
         apply_port_metadata(device, ports)
         device.model_parameters = model_parameters.get(name, {})
         device.model_limits = model_limits.get(name, [])
+        device.isolation_junctions = junctions.get(name, [])
         device.associated_devices = dependencies.get(name, [])
         if device.model_parameters:
             device.parameter_confidence = "confirmed"
@@ -427,6 +433,7 @@ def parse_sources(
     file_results: list[dict[str, Any]] = []
     evidence: list[dict[str, Any]] = []
     document_sources: list[tuple[str, str]] = []
+    model_texts: list[tuple[str, str]] = []
     total_sources = len(sources)
     for source_index, source in enumerate(sources, 1):
         path = str(source.get("path", ""))
@@ -442,6 +449,7 @@ def parse_sources(
             path=path,
         )
         text = read_source(source)
+        model_texts.append((path, text))
         lower = path.lower()
         kind = str(source.get("candidate_kind", ""))
         if kind == "document" or lower.endswith((".pdf", ".txt")) or "readme" in lower:
@@ -458,6 +466,7 @@ def parse_sources(
         definitions = parse_model_definitions(text)
         model_parameters = parse_model_parameters(text)
         model_limits = parse_model_limits(text)
+        junctions = parse_isolation_junctions(text, path)
         dependencies = parse_subckt_dependencies(text)
         definition_map: dict[str, tuple[list[str], int]] = {}
         for name, ports, line in definitions:
@@ -474,6 +483,7 @@ def parse_sources(
             apply_port_metadata(device, ports)
             device.model_parameters = model_parameters.get(name, {})
             device.model_limits = model_limits.get(name, [])
+            device.isolation_junctions = junctions.get(name, [])
             device.associated_devices = dependencies.get(name, [])
             if device.model_parameters:
                 device.parameter_confidence = "confirmed"
@@ -487,12 +497,7 @@ def parse_sources(
             device.model_sources = [{"path": path, "line": line, "kind": kind or "model_spectre"}]
             source_devices.append(device)
             devices.append(device)
-        candidates = topology_rule_candidates(source_devices, [*rules, *parsed_rules], path)
-        for rule in candidates:
-            key = (rule.target, rule.name, rule.expr, rule.maximum, rule.minimum)
-            if key not in seen_rules:
-                seen_rules.add(key)
-                rules.append(rule)
+        candidates: list[Rule] = []  # Generate topology after resolving all selected diode definitions.
         role = "规则源" if parsed_rules else "器件资料" if parsed_devices or model_names else "文档/证据"
         status = "已提取规则" if parsed_rules else "已识别模型内 SOA" if has_model_soa else "已识别器件/端口" if parsed_devices or model_names else "已读取，等待专用抽取器"
         file_result = {"path": path, "kind": kind or "unknown", "role": role, "status": status, "rule_count": len(parsed_rules), "device_count": len(parsed_devices), "model_count": len(model_names), "port_device_count": sum(bool(ports) for ports, _line in definition_map.values()), "topology_rule_count": len(candidates), "model_names": model_names[:100], "model_internal_soa": has_model_soa, "model_soa_mechanism": model_soa["mechanism"], "model_soa_line": model_soa["line"], "model_soa_note": model_soa["note"]}
@@ -509,6 +514,7 @@ def parse_sources(
         )
     _progress(progress, stage="merging_profiles", completed=total_sources, total=total_sources, percent=84)
     devices = merge_devices(devices, rules)
+    bind_selected_isolation_models(devices, model_texts)
     if document_sources:
         known_devices = {device.name: device for device in devices}
         for document_path, document_text in document_sources:
@@ -582,10 +588,12 @@ def parse_texts(
     seen_rules: set[tuple[str, str, str, str | None, str | None]] = set()
     file_results: list[dict[str, Any]] = []
     document_sources: list[tuple[str, str]] = []
+    model_texts: list[tuple[str, str]] = []
     total_files = len(files)
     for file_index, item in enumerate(files, 1):
         path_value = str(item.get("path", "browser-file"))
         text_value = str(item.get("text", ""))
+        model_texts.append((path_value, text_value))
         _progress(
             progress,
             stage="parsing_file",
@@ -620,6 +628,7 @@ def parse_texts(
         })
         model_parameters = parse_model_parameters(text_value)
         model_limits = parse_model_limits(text_value)
+        junctions = parse_isolation_junctions(text_value, path_value)
         dependencies = parse_subckt_dependencies(text_value)
         model_devices: list[Any] = []
         for name, ports, line in parse_model_definitions(text_value):
@@ -627,6 +636,7 @@ def parse_texts(
             apply_port_metadata(device, ports)
             device.model_parameters = model_parameters.get(name, {})
             device.model_limits = model_limits.get(name, [])
+            device.isolation_junctions = junctions.get(name, [])
             device.associated_devices = dependencies.get(name, [])
             if device.model_parameters:
                 device.parameter_confidence = "confirmed"
@@ -645,11 +655,6 @@ def parse_texts(
             port_device_count=sum(bool(device.ports) for device in model_devices),
             model_names=[device.name for device in model_devices[:100]],
         )
-        for rule in topology_rule_candidates(model_devices, rules, path_value):
-            key = (rule.target, rule.name, rule.expr, rule.maximum, rule.minimum)
-            if key not in seen_rules:
-                seen_rules.add(key)
-                rules.append(rule)
         _progress(
             progress,
             stage="file_complete",
@@ -661,6 +666,7 @@ def parse_texts(
         )
     _progress(progress, stage="merging_profiles", completed=total_files, total=total_files, percent=84)
     devices = merge_devices(devices, rules)
+    bind_selected_isolation_models(devices, model_texts)
     if document_sources:
         known_devices = {device.name: device for device in devices}
         for document_path, document_text in document_sources:

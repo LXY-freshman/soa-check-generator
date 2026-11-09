@@ -39,6 +39,7 @@ class Device:
     gate_voltage_confidence: str = "missing"
     isolation_voltage: float | None = None
     isolation_confidence: str = "missing"
+    isolation_type: str = "unknown"
     ports: list[str] = field(default_factory=list)
     port_roles: dict[str, str] = field(default_factory=dict)
     port_confidence: str = "missing"
@@ -47,6 +48,7 @@ class Device:
     parameter_confidence: str = "missing"
     aliases: list[str] = field(default_factory=list)
     model_sources: list[dict[str, Any]] = field(default_factory=list)
+    isolation_junctions: list[dict[str, Any]] = field(default_factory=list)
     source: SourceEvidence | None = None
     soa_status: str = "unknown"
     associated_devices: list[str] = field(default_factory=list)
