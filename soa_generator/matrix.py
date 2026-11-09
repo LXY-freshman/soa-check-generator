@@ -3,10 +3,8 @@ from __future__ import annotations
 from typing import Iterable
 
 from .models import Device, Rule
+from .topology import ISOLATION_PORTS, isolation_connections
 from .resolution import ResolvedRule, normalize_source_priority, physical_rule_key, resolve_rule_group, resolve_rule_groups, scalar_bounds_in_direction, scalar_rule_key, source_route
-
-
-_ISOLATION_PORTS = {"iso", "isub", "nbl", "pepi", "hvnwell", "hvbn", "dpw", "ddnw"}
 
 
 def _port(device: Device, *names: str) -> str | None:
@@ -52,24 +50,13 @@ def _metric_item(device: Device, kind: str, port_names: tuple[str, ...], reason:
 
 
 def _isolation_definitions(device: Device) -> list[dict[str, object]]:
-    has_isolation = bool(set(device.topology) & _ISOLATION_PORTS) or bool(set(port.lower() for port in device.ports) & _ISOLATION_PORTS)
-    pairs = [
-        (("iso",), ("b", "bs", "sub"), "隔离环到体/衬底"),
-        (("iso",), ("sub", "psub"), "隔离环到衬底"),
-        (("isub",), ("b", "bs", "sub"), "隔离衬底到体端"),
-        (("nbl",), ("psub",), "NBL 到 P 衬底"),
-        (("nbl",), ("pepi",), "NBL 到 P 外延层"),
-        (("nbl",), ("b", "bs"), "NBL 到器件体端"),
-        (("nbl",), ("d",), "NBL 到漏极"),
-        (("pepi",), ("psub",), "P 外延层到 P 衬底"),
-        (("hvnwell", "hvbn", "dpw", "ddnw"), ("b", "bs", "sub"), "高压井到器件体端"),
+    has_isolation = bool(set(token.lower() for token in device.topology) & ISOLATION_PORTS) or bool(set(port.lower() for port in device.ports) & ISOLATION_PORTS)
+    result = [
+        {"limit_kind": "isolation_bv", "pair": [connection.left, connection.right],
+         "applicable": True, "status": "missing", "reason": connection.description,
+         "isolation_side": connection.side}
+        for connection in isolation_connections(device)
     ]
-    result = []
-    for left_names, right_names, reason in pairs:
-        left = _port(device, *left_names)
-        right = _port(device, *right_names)
-        if left and right:
-            result.append(_pair_item(device, "isolation_bv", left_names, right_names, reason))
     if not result:
         result.append({
             "limit_kind": "isolation_bv",
@@ -213,6 +200,7 @@ def build_check_matrix(
             "applicable": bool(definition.get("applicable", True)),
             "status": status,
             "reason": str(definition.get("reason", "")),
+            "isolation_side": str(definition.get("isolation_side", "")),
             "route": resolved.route if chosen else "inference",
             "source": chosen.source.to_dict() if chosen and chosen.source else None,
             "source_candidates": [

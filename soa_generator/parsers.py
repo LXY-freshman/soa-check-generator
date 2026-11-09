@@ -7,6 +7,7 @@ from typing import Iterable
 from .classify import apply_device_metadata, apply_port_metadata, classify_device, isolation_voltage
 from .models import Device, Rule, SourceEvidence
 from .resolution import expression_measurement_key
+from .topology import isolation_connections
 
 
 _ASSERT_RE = re.compile(r"^(?P<name>\S+)\s+assert\s+(?P<body>.*)$", re.I)
@@ -247,25 +248,6 @@ def detect_model_soa(text: str) -> dict[str, object]:
     return {"enabled": False, "mechanism": None, "line": None, "note": ""}
 
 
-def _isolation_pairs(device: Device) -> list[tuple[str, str]]:
-    ports = {port.lower(): port for port in device.ports}
-    pairs: list[tuple[str, str]] = []
-    for left_names, right_names in [
-        (("iso",), ("b", "bs", "sub", "psub")),
-        (("isub",), ("b", "bs", "sub")),
-        (("nbl",), ("psub", "pepi", "b", "bs", "d")),
-        (("pepi",), ("psub",)),
-        (("hvnwell", "hvbn", "dpw", "ddnw"), ("b", "bs", "sub")),
-    ]:
-        left_values = [ports[name] for name in left_names if name in ports]
-        right_values = [ports[name] for name in right_names if name in ports]
-        for left in left_values:
-            for right in right_values:
-                if (left, right) not in pairs:
-                    pairs.append((left, right))
-    return pairs
-
-
 def topology_rule_candidates(
     devices: Iterable[Device],
     existing_rules: Iterable[Rule],
@@ -275,10 +257,11 @@ def topology_rule_candidates(
     existing = {(*expression_measurement_key(rule.target, rule.expr), rule.limit_kind) for rule in existing_rules}
     candidates: list[Rule] = []
     for device in devices:
-        pairs = _isolation_pairs(device)
-        if not pairs or not device.ports:
+        connections = isolation_connections(device)
+        if not connections:
             continue
-        for left, right in pairs:
+        for connection in connections:
+            left, right = connection.left, connection.right
             expr = f"v({left},{right})"
             key = (*expression_measurement_key(device.name, expr), "isolation_bv")
             if key in existing:
@@ -290,6 +273,8 @@ def topology_rule_candidates(
                 if named_voltage
                 else f"端口 {left}/{right} 来自模型定义；器件名称没有隔离电压等级，保留空值等待手册或用户填写。"
             )
+            reason = f"{connection.description}；{reason}"
+            model_source = next((item.get("path") for item in device.model_sources if item.get("path")), None)
             rule = Rule(
                 rule_id=f"inferred:isolation:{device.name}:{left}:{right}",
                 name=f"candidate_{device.name}_{left}_{right}_isolation_bv",
@@ -307,7 +292,7 @@ def topology_rule_candidates(
                 confidence="inferred" if value is not None else "missing",
                 enabled=False,
                 source=SourceEvidence(
-                    path=source_path,
+                    path=str(model_source or source_path),
                     mechanism="inference",
                     note=reason,
                 ),

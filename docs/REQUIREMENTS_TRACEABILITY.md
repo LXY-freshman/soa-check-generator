@@ -12,6 +12,7 @@
 | `Vsb/Vbs` 等反向端口等价判断、多段 SOA 曲线保留 | PROJECT_PLAN | 标量边界换向后比较；条件、section、作用域和持续时间保持独立；预览/导出/快速检查共用选择逻辑 |
 | 模型内 `gsoa/bsource` 与外部 assert 分开 | ADR 0003、PROJECT_PLAN | 已实现 |
 | 端口、隔离环、NBL/PSUB/PEPI、组合器件 | ADR 0006/0007、GLOSSARY | 已实现基础版；端口档案明确区分 `PSUB=bulk_substrate` 与 `NBL/PEPI/ISO=isolation_structure` |
+| HVBN 隔离环对内 body / 对外 PSUB 耐压 | PROJECT_PLAN、BCDE V1.4 回归记录 | 规则候选与矩阵共用端口关系；内外限值独立，界面分别命名；无隔离等级时空值且默认关闭 |
 | MOS 和非 MOS 模型参数/命名推断候选 | ADR 0005、PROJECT_PLAN | 已实现基础版 |
 | 工艺手册限值作为独立证据参与规则选择 | ADR 0005/0007、适配器文档 | `soa-adapter/v1.check_rules` 已实现，保留路径、页码、备注和 `documented` 置信度 |
 | 直接解析选中的手册文本/PDF | PROJECT_PLAN、GLOSSARY | 已实现行内限值和表头/器件行/续行表格提取；曲线、典型值和范围保留为未转换证据 |
