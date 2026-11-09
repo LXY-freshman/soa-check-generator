@@ -12,9 +12,12 @@ import stat
 import subprocess
 import tempfile
 import re
+import threading
+import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlparse
 
 from .discovery import CandidateFile, discover_local, summarize_candidates
@@ -44,6 +47,13 @@ from .schema import adapter_metadata, project_schema_document, validate_adapter_
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB_ROOT = ROOT / "web"
+_PARSE_JOBS: dict[str, dict[str, Any]] = {}
+_PARSE_JOBS_LOCK = threading.Lock()
+
+
+def _progress(callback: Callable[[dict[str, Any]], None] | None, **values: Any) -> None:
+    if callback:
+        callback(values)
 
 
 def _spectre_diagnostics(output: str, exit_code: int) -> list[dict[str, object]]:
@@ -401,7 +411,12 @@ def parse_text(text: str, path: str, adapter_config: dict[str, Any] | None = Non
     }
 
 
-def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] | None = None, source_priority: list[str] | None = None) -> dict[str, Any]:
+def parse_sources(
+    sources: list[dict[str, Any]],
+    adapter_config: dict[str, Any] | None = None,
+    source_priority: list[str] | None = None,
+    progress: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
     effective_priority = normalize_source_priority(source_priority)
     devices = []
     rules: list[Rule] = []
@@ -410,11 +425,20 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
     file_results: list[dict[str, Any]] = []
     evidence: list[dict[str, Any]] = []
     document_sources: list[tuple[str, str]] = []
-    for source in sources:
+    total_sources = len(sources)
+    for source_index, source in enumerate(sources, 1):
         path = str(source.get("path", ""))
         if path in seen_paths:
             continue
         seen_paths.add(path)
+        _progress(
+            progress,
+            stage="reading_file",
+            completed=source_index - 1,
+            total=total_sources,
+            percent=round(5 + 75 * (source_index - 1) / max(total_sources, 1)),
+            path=path,
+        )
         text = read_source(source)
         lower = path.lower()
         kind = str(source.get("candidate_kind", ""))
@@ -472,6 +496,16 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
         file_result = {"path": path, "kind": kind or "unknown", "role": role, "status": status, "rule_count": len(parsed_rules), "device_count": len(parsed_devices), "model_count": len(model_names), "port_device_count": sum(bool(ports) for ports, _line in definition_map.values()), "topology_rule_count": len(candidates), "model_names": model_names[:100], "model_internal_soa": has_model_soa, "model_soa_mechanism": model_soa["mechanism"], "model_soa_line": model_soa["line"], "model_soa_note": model_soa["note"]}
         file_results.append(file_result)
         evidence.append(file_result)
+        _progress(
+            progress,
+            stage="file_complete",
+            completed=source_index,
+            total=total_sources,
+            percent=round(5 + 75 * source_index / max(total_sources, 1)),
+            path=path,
+            file_status=status,
+        )
+    _progress(progress, stage="merging_profiles", completed=total_sources, total=total_sources, percent=84)
     devices = merge_devices(devices, rules)
     if document_sources:
         known_devices = {device.name: device for device in devices}
@@ -488,6 +522,7 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
                 result["manual_rule_count"] = len(manual_rules)
                 result["rule_count"] = int(result.get("rule_count", 0)) + len(manual_rules)
                 result["status"] = "已提取文档限值"
+    _progress(progress, stage="generating_candidates", completed=total_sources, total=total_sources, percent=88)
     apply_adapter_config(devices, rules, adapter_config)
     topology = topology_rule_candidates(devices, rules)
     for rule in topology:
@@ -500,6 +535,7 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
     non_mos = non_mos_rule_candidates(devices, rules)
     rules.extend(non_mos)
     devices = merge_devices(devices, rules)
+    _progress(progress, stage="building_matrix", completed=total_sources, total=total_sources, percent=96)
     refresh_profiles(devices, rules, effective_priority)
     for device in devices:
         related = [item for item in evidence if device.name in item.get("model_names", [])]
@@ -532,6 +568,138 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
     }
 
 
+def parse_texts(
+    files: list[dict[str, Any]],
+    adapter_config: dict[str, Any] | None = None,
+    source_priority: list[str] | None = None,
+    progress: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    effective_priority = normalize_source_priority(source_priority)
+    devices = []
+    rules: list[Rule] = []
+    seen_rules: set[tuple[str, str, str, str | None, str | None]] = set()
+    file_results: list[dict[str, Any]] = []
+    document_sources: list[tuple[str, str]] = []
+    total_files = len(files)
+    for file_index, item in enumerate(files, 1):
+        path_value = str(item.get("path", "browser-file"))
+        text_value = str(item.get("text", ""))
+        _progress(
+            progress,
+            stage="parsing_file",
+            completed=file_index - 1,
+            total=total_files,
+            percent=round(5 + 75 * (file_index - 1) / max(total_files, 1)),
+            path=path_value,
+        )
+        if item.get("kind") == "document" or path_value.lower().endswith((".pdf", ".txt")) or "readme" in path_value.lower():
+            document_sources.append((path_value, text_value))
+        is_device_list = item.get("kind") == "device_list" or path_value.lower().endswith((".devicelist", "device_list"))
+        file_devices = parse_device_list(text_value, path_value) if is_device_list else []
+        file_rules = [] if is_device_list else parse_spectre_asserts(text_value, path_value)
+        devices.extend(file_devices)
+        for rule in file_rules:
+            key = (rule.target, rule.name, rule.expr, rule.maximum, rule.minimum)
+            if key not in seen_rules:
+                seen_rules.add(key)
+                rules.append(rule)
+        model_soa = detect_model_soa(text_value)
+        file_results.append({
+            "path": path_value,
+            "kind": item.get("kind", "unknown"),
+            "role": "规则源" if item.get("kind") in {"spectre_soa", "hspice_soa"} else "器件资料",
+            "status": "已识别模型内 SOA" if model_soa["enabled"] and not file_rules else "已提取规则" if file_rules else "已识别器件" if file_devices else "已读取，等待专用抽取器",
+            "rule_count": len(file_rules),
+            "device_count": len(file_devices),
+            "model_internal_soa": model_soa["enabled"],
+            "model_soa_mechanism": model_soa["mechanism"],
+            "model_soa_line": model_soa["line"],
+            "model_soa_note": model_soa["note"],
+        })
+        model_parameters = parse_model_parameters(text_value)
+        model_limits = parse_model_limits(text_value)
+        dependencies = parse_subckt_dependencies(text_value)
+        model_devices: list[Any] = []
+        for name, ports, line in parse_model_definitions(text_value):
+            device = classify_device(name, "model")
+            apply_port_metadata(device, ports)
+            device.model_parameters = model_parameters.get(name, {})
+            device.model_limits = model_limits.get(name, [])
+            device.associated_devices = dependencies.get(name, [])
+            if device.model_parameters:
+                device.parameter_confidence = "confirmed"
+            apply_adapter_config([device], rules, adapter_config)
+            device.source = SourceEvidence(
+                path=path_value,
+                line=line,
+                mechanism="model_internal" if model_soa["enabled"] else "unknown",
+                note="模型定义" + (f"；{model_soa['note']}" if model_soa["enabled"] else ""),
+            )
+            device.model_sources = [{"path": path_value, "line": line, "kind": item.get("kind", "model_spectre")}]
+            model_devices.append(device)
+            devices.append(device)
+        file_results[-1].update(
+            model_count=len(model_devices),
+            port_device_count=sum(bool(device.ports) for device in model_devices),
+            model_names=[device.name for device in model_devices[:100]],
+        )
+        for rule in topology_rule_candidates(model_devices, rules, path_value):
+            key = (rule.target, rule.name, rule.expr, rule.maximum, rule.minimum)
+            if key not in seen_rules:
+                seen_rules.add(key)
+                rules.append(rule)
+        _progress(
+            progress,
+            stage="file_complete",
+            completed=file_index,
+            total=total_files,
+            percent=round(5 + 75 * file_index / max(total_files, 1)),
+            path=path_value,
+            file_status=file_results[-1]["status"],
+        )
+    _progress(progress, stage="merging_profiles", completed=total_files, total=total_files, percent=84)
+    devices = merge_devices(devices, rules)
+    if document_sources:
+        known_devices = {device.name: device for device in devices}
+        for document_path, document_text in document_sources:
+            manual_rules = parse_manual_rules(document_text, document_path, known_devices.values())
+            for rule in manual_rules:
+                key = (rule.target, rule.name, rule.expr, rule.maximum, rule.minimum)
+                if key in seen_rules:
+                    continue
+                seen_rules.add(key)
+                rules.append(rule)
+            result = next((entry for entry in file_results if entry.get("path") == document_path), None)
+            if result is not None and manual_rules:
+                result["manual_rule_count"] = len(manual_rules)
+                result["rule_count"] = int(result.get("rule_count", 0)) + len(manual_rules)
+                result["status"] = "已提取文档限值"
+    _progress(progress, stage="generating_candidates", completed=total_files, total=total_files, percent=89)
+    apply_adapter_config(devices, rules, adapter_config)
+    topology = topology_rule_candidates(devices, rules)
+    for rule in topology:
+        key = (rule.target, rule.name, rule.expr, rule.maximum, rule.minimum)
+        if key not in seen_rules:
+            seen_rules.add(key)
+            rules.append(rule)
+    model_rules = model_rule_candidates(devices, rules)
+    rules.extend(model_rules)
+    non_mos = non_mos_rule_candidates(devices, rules)
+    rules.extend(non_mos)
+    devices = merge_devices(devices, rules)
+    _progress(progress, stage="building_matrix", completed=total_files, total=total_files, percent=96)
+    refresh_profiles(devices, rules, effective_priority)
+    return {
+        "adapter": adapter_metadata(adapter_config),
+        "source_priority": effective_priority,
+        "devices": [item.to_dict() for item in devices],
+        "rules": [item.to_dict() for item in rules],
+        "file_results": file_results,
+        "coverage": pdk_coverage([item.to_dict() for item in devices], [item.to_dict() for item in rules], file_results),
+        "summary": {"files": len(files), "devices": len(devices), "rules": len(rules), "inferred_rules": len(non_mos) + len(model_rules)},
+    }
+
+
 def _rule_from_dict(value: dict[str, Any]) -> Rule:
     value = dict(value)
     source = value.get("source")
@@ -544,6 +712,91 @@ def _rule_from_dict(value: dict[str, Any]) -> Rule:
     value["override"] = dict(value.get("override") or {})
     value["notes"] = list(value.get("notes") or [])
     return Rule(**{key: value[key] for key in Rule.__dataclass_fields__ if key in value})
+
+
+def _start_parse_job(body: dict[str, Any]) -> dict[str, str]:
+    mode = str(body.get("mode", "sources"))
+    if mode not in {"sources", "texts"}:
+        raise ValueError("解析任务 mode 只能是 sources 或 texts。")
+    total = len(body.get("sources", []) if mode == "sources" else body.get("files", []))
+    job_id = uuid.uuid4().hex
+    now = time.time()
+    with _PARSE_JOBS_LOCK:
+        expired = [
+            key for key, job in _PARSE_JOBS.items()
+            if job.get("status") in {"complete", "failed"} and now - float(job.get("updated_at", now)) > 600
+        ]
+        for key in expired:
+            _PARSE_JOBS.pop(key, None)
+        terminal = sorted(
+            ((key, float(job.get("updated_at", now))) for key, job in _PARSE_JOBS.items() if job.get("status") in {"complete", "failed"}),
+            key=lambda item: item[1],
+        )
+        for key, _updated_at in terminal[:-9]:
+            _PARSE_JOBS.pop(key, None)
+        _PARSE_JOBS[job_id] = {
+            "job_id": job_id,
+            "mode": mode,
+            "status": "queued",
+            "stage": "queued",
+            "completed": 0,
+            "total": total,
+            "percent": 0,
+            "updated_at": now,
+        }
+
+    def update_progress(values: dict[str, Any]) -> None:
+        with _PARSE_JOBS_LOCK:
+            job = _PARSE_JOBS.get(job_id)
+            if job is None:
+                return
+            job.update(values)
+            job["status"] = "running"
+            job["updated_at"] = time.time()
+
+    def run() -> None:
+        try:
+            update_progress({"stage": "starting", "percent": 1})
+            if mode == "sources":
+                result = parse_sources(
+                    body.get("sources", []),
+                    body.get("adapter_config"),
+                    body.get("source_priority"),
+                    progress=update_progress,
+                )
+            else:
+                result = parse_texts(
+                    body.get("files", []),
+                    body.get("adapter_config"),
+                    body.get("source_priority"),
+                    progress=update_progress,
+                )
+            with _PARSE_JOBS_LOCK:
+                job = _PARSE_JOBS.get(job_id)
+                if job is not None:
+                    job.update({
+                        "status": "complete",
+                        "stage": "complete",
+                        "percent": 100,
+                        "completed": total,
+                        "total": total,
+                        "result": result,
+                        "updated_at": time.time(),
+                    })
+        except Exception as exc:
+            with _PARSE_JOBS_LOCK:
+                job = _PARSE_JOBS.get(job_id)
+                if job is not None:
+                    job.update({"status": "failed", "stage": "failed", "error": str(exc), "updated_at": time.time()})
+
+    threading.Thread(target=run, name=f"soa-parse-{job_id[:8]}", daemon=True).start()
+    return {"job_id": job_id, "status": "queued"}
+
+
+def _parse_job_snapshot(job_id: str) -> dict[str, Any] | None:
+    with _PARSE_JOBS_LOCK:
+        job = _PARSE_JOBS.get(job_id)
+        return dict(job) if job is not None else None
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -573,6 +826,17 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/api/health":
             self._send_json({"ok": True, "service": self.server_version})
+            return
+        if path.startswith("/api/parse_jobs/"):
+            job_id = path.rsplit("/", 1)[-1]
+            job = _parse_job_snapshot(job_id)
+            if job is None:
+                self._send_json({"error": "解析任务不存在或已过期。"}, status=404)
+            else:
+                self._send_json(job)
+                if job.get("status") in {"complete", "failed"}:
+                    with _PARSE_JOBS_LOCK:
+                        _PARSE_JOBS.pop(job_id, None)
             return
         if path == "/api/schema":
             self._send_json(project_schema_document())
@@ -605,102 +869,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/parse_sources":
                 self._send_json(parse_sources(body.get("sources", []), body.get("adapter_config"), body.get("source_priority")))
                 return
+            if path == "/api/parse_jobs":
+                self._send_json(_start_parse_job(body), status=202)
+                return
             if path == "/api/parse_texts":
-                effective_priority = normalize_source_priority(body.get("source_priority"))
-                devices = []
-                rules: list[Rule] = []
-                seen_rules: set[tuple[str, str, str, str | None, str | None]] = set()
-                file_results: list[dict[str, Any]] = []
-                document_sources: list[tuple[str, str]] = []
-                for item in body.get("files", []):
-                    path_value = str(item.get("path", "browser-file"))
-                    text_value = str(item.get("text", ""))
-                    if item.get("kind") == "document" or path_value.lower().endswith((".pdf", ".txt")) or "readme" in path_value.lower():
-                        document_sources.append((path_value, text_value))
-                    is_device_list = item.get("kind") == "device_list" or path_value.lower().endswith((".devicelist", "device_list"))
-                    file_devices = parse_device_list(text_value, path_value) if is_device_list else []
-                    file_rules = [] if is_device_list else parse_spectre_asserts(text_value, path_value)
-                    devices.extend(file_devices)
-                    for rule in file_rules:
-                        key = (rule.target, rule.name, rule.expr, rule.maximum, rule.minimum)
-                        if key not in seen_rules:
-                            seen_rules.add(key)
-                            rules.append(rule)
-                    model_soa = detect_model_soa(text_value)
-                    file_results.append({
-                        "path": path_value,
-                        "kind": item.get("kind", "unknown"),
-                        "role": "规则源" if item.get("kind") in {"spectre_soa", "hspice_soa"} else "器件资料",
-                        "status": "已识别模型内 SOA" if model_soa["enabled"] and not file_rules else "已提取规则" if file_rules else "已识别器件" if file_devices else "已读取，等待专用抽取器",
-                        "rule_count": len(file_rules),
-                        "device_count": len(file_devices),
-                        "model_internal_soa": model_soa["enabled"],
-                        "model_soa_mechanism": model_soa["mechanism"],
-                        "model_soa_line": model_soa["line"],
-                        "model_soa_note": model_soa["note"],
-                    })
-                    model_parameters = parse_model_parameters(text_value)
-                    model_limits = parse_model_limits(text_value)
-                    dependencies = parse_subckt_dependencies(text_value)
-                    model_devices: list[Any] = []
-                    for name, ports, line in parse_model_definitions(text_value):
-                        device = classify_device(name, "model")
-                        apply_port_metadata(device, ports)
-                        device.model_parameters = model_parameters.get(name, {})
-                        device.model_limits = model_limits.get(name, [])
-                        device.associated_devices = dependencies.get(name, [])
-                        if device.model_parameters:
-                            device.parameter_confidence = "confirmed"
-                        apply_adapter_config([device], rules, body.get("adapter_config"))
-                        device.source = SourceEvidence(
-                            path=path_value,
-                            line=line,
-                            mechanism="model_internal" if model_soa["enabled"] else "unknown",
-                            note="模型定义" + (f"；{model_soa['note']}" if model_soa["enabled"] else ""),
-                        )
-                        device.model_sources = [{"path": path_value, "line": line, "kind": item.get("kind", "model_spectre")}]
-                        model_devices.append(device)
-                        devices.append(device)
-                    file_results[-1].update(
-                        model_count=len(model_devices),
-                        port_device_count=sum(bool(device.ports) for device in model_devices),
-                        model_names=[device.name for device in model_devices[:100]],
-                    )
-                    for rule in topology_rule_candidates(model_devices, rules, path_value):
-                        key = (rule.target, rule.name, rule.expr, rule.maximum, rule.minimum)
-                        if key not in seen_rules:
-                            seen_rules.add(key)
-                            rules.append(rule)
-                devices = merge_devices(devices, rules)
-                if document_sources:
-                    known_devices = {device.name: device for device in devices}
-                    for document_path, document_text in document_sources:
-                        manual_rules = parse_manual_rules(document_text, document_path, known_devices.values())
-                        for rule in manual_rules:
-                            key = (rule.target, rule.name, rule.expr, rule.maximum, rule.minimum)
-                            if key in seen_rules:
-                                continue
-                            seen_rules.add(key)
-                            rules.append(rule)
-                        result = next((item for item in file_results if item.get("path") == document_path), None)
-                        if result is not None and manual_rules:
-                            result["manual_rule_count"] = len(manual_rules)
-                            result["rule_count"] = int(result.get("rule_count", 0)) + len(manual_rules)
-                            result["status"] = "已提取文档限值"
-                apply_adapter_config(devices, rules, body.get("adapter_config"))
-                topology = topology_rule_candidates(devices, rules)
-                for rule in topology:
-                    key = (rule.target, rule.name, rule.expr, rule.maximum, rule.minimum)
-                    if key not in seen_rules:
-                        seen_rules.add(key)
-                        rules.append(rule)
-                model_rules = model_rule_candidates(devices, rules)
-                rules.extend(model_rules)
-                non_mos = non_mos_rule_candidates(devices, rules)
-                rules.extend(non_mos)
-                devices = merge_devices(devices, rules)
-                refresh_profiles(devices, rules, effective_priority)
-                self._send_json({"adapter": adapter_metadata(body.get("adapter_config")), "source_priority": effective_priority, "devices": [item.to_dict() for item in devices], "rules": [item.to_dict() for item in rules], "file_results": file_results, "coverage": pdk_coverage([item.to_dict() for item in devices], [item.to_dict() for item in rules], file_results), "summary": {"files": len(body.get("files", [])), "devices": len(devices), "rules": len(rules), "inferred_rules": len(non_mos) + len(model_rules)}})
+                self._send_json(parse_texts(body.get("files", []), body.get("adapter_config"), body.get("source_priority")))
                 return
             if path == "/api/coverage":
                 self._send_json(pdk_coverage(body.get("devices", []), body.get("rules", []), body.get("sources", [])))

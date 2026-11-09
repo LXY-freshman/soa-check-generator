@@ -11,7 +11,7 @@ from soa_generator.manual import parse_manual_rules
 from soa_generator.parsers import detect_model_soa, parse_device_list, parse_model_definitions, parse_model_limits, parse_model_parameters, parse_spectre_asserts, parse_subckt_dependencies
 from soa_generator.resolution import resolve_rule_groups
 from soa_generator.schema import validate_adapter_config, validate_project_payload
-from soa_generator.service import _spectre_diagnostics, parse_sources, parse_text
+from soa_generator.service import _spectre_diagnostics, parse_sources, parse_text, parse_texts
 from soa_generator.validation import lint_rules
 
 
@@ -272,6 +272,17 @@ esd6_pnp_nbl
         self.assertEqual(device["model_sources"][0]["kind"], "model_spectre")
         self.assertEqual(payload["coverage"]["summary"]["model_backed_devices"], 1)
         self.assertEqual(payload["coverage"]["summary"]["device_list_only_devices"], 0)
+
+    def test_browser_batch_parser_reports_file_progress(self) -> None:
+        updates = []
+        result = parse_texts([
+            {"path": "one.scs", "kind": "model_spectre", "text": "subckt n18_ckt (d g s b)\n"},
+            {"path": "two.scs", "kind": "model_spectre", "text": "subckt n50_ckt (d g s b)\n"},
+        ], progress=updates.append)
+        self.assertEqual(result["summary"]["files"], 2)
+        completed = [item["completed"] for item in updates if item["stage"] == "file_complete"]
+        self.assertEqual(completed, [1, 2])
+        self.assertEqual(updates[-1]["stage"], "building_matrix")
 
     def test_multiple_model_sources_complete_iso_mos_profiles_without_fake_ratings(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
