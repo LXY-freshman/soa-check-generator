@@ -7,6 +7,7 @@ Read `docs/PROJECT_PLAN.md` before changing scope. Read `docs/DEVELOPMENT.md` be
 ## Boundaries
 
 - Keep original PDK files read-only. Store only脱敏 fixtures and metadata in Git.
+- Process only user-selected readable files/directories. Archives and unextracted PDK packages are explicitly out of scope; do not unpack or scan them automatically.
 - Treat PDK SOA files as evidence. Preserve source paths, mechanisms, and confidence on derived rules.
 - Keep inferred rules disabled until a user confirms them.
 - Do not store SSH passwords, private keys, or raw credentials in project JSON, tests, or documentation.
