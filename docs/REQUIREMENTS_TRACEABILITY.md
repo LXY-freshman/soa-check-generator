@@ -9,6 +9,7 @@
 | PDK 版本明确、原始资料只读、用户覆盖写入派生文件 | ADR 0001、GLOSSARY | 已实现 |
 | 本机/SSH 路径、密码输入、禁止私钥输入、脱敏错误 | ADR 0002/0004、DEVELOPMENT | 已实现 |
 | Spectre `sub/subs`、min/max 合并、来源证据 | ADR 0003、PROJECT_PLAN | 已实现 |
+| `Vsb/Vbs` 等反向端口等价判断、多段 SOA 曲线保留 | PROJECT_PLAN | 标量边界换向后比较；条件、section、作用域和持续时间保持独立；预览/导出/快速检查共用选择逻辑 |
 | 模型内 `gsoa/bsource` 与外部 assert 分开 | ADR 0003、PROJECT_PLAN | 已实现 |
 | 端口、隔离环、NBL/PSUB/PEPI、组合器件 | ADR 0006/0007、GLOSSARY | 已实现基础版；端口档案明确区分 `PSUB=bulk_substrate` 与 `NBL/PEPI/ISO=isolation_structure` |
 | MOS 和非 MOS 模型参数/命名推断候选 | ADR 0005、PROJECT_PLAN | 已实现基础版 |

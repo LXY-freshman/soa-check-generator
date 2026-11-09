@@ -6,6 +6,7 @@ from typing import Iterable
 
 from .classify import apply_device_metadata, apply_port_metadata, classify_device, isolation_voltage
 from .models import Device, Rule, SourceEvidence
+from .resolution import expression_measurement_key
 
 
 _ASSERT_RE = re.compile(r"^(?P<name>\S+)\s+assert\s+(?P<body>.*)$", re.I)
@@ -271,7 +272,7 @@ def topology_rule_candidates(
     source_path: str = "<inferred>",
 ) -> list[Rule]:
     """Create disabled isolation checks from model ports and explicit ratings."""
-    existing = {(rule.target, rule.expr.replace(" ", "").lower(), rule.limit_kind) for rule in existing_rules}
+    existing = {(*expression_measurement_key(rule.target, rule.expr), rule.limit_kind) for rule in existing_rules}
     candidates: list[Rule] = []
     for device in devices:
         pairs = _isolation_pairs(device)
@@ -279,7 +280,7 @@ def topology_rule_candidates(
             continue
         for left, right in pairs:
             expr = f"v({left},{right})"
-            key = (device.name, expr, "isolation_bv")
+            key = (*expression_measurement_key(device.name, expr), "isolation_bv")
             if key in existing:
                 continue
             named_voltage = isolation_voltage(device.name) is not None

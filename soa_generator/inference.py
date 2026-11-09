@@ -5,6 +5,8 @@ import re
 from typing import Iterable
 
 from .models import Confidence, Device, Rule, SourceEvidence
+from .classify import classify_limit
+from .resolution import expression_measurement_key
 
 
 @dataclass
@@ -134,11 +136,11 @@ def non_mos_rule_candidates(
     model terminal pair and a numeric process/name clue are available.
     """
     existing = {
-        (rule.target, re.sub(r"\s+", "", rule.expr).lower())
+        expression_measurement_key(str(rule.effective("target")), str(rule.effective("expr") or ""))
         for rule in existing_rules
     }
     existing_kinds = {
-        (rule.target, re.sub(r"\s+", "", rule.expr).lower(), rule.limit_kind)
+        (*expression_measurement_key(str(rule.effective("target")), str(rule.effective("expr") or "")), rule.limit_kind)
         for rule in existing_rules
     }
     candidates: list[Rule] = []
@@ -155,7 +157,7 @@ def non_mos_rule_candidates(
             or device.ports[2].lower() in {"sx", "sub", "psub", "bulk", "b"}
         )
         expr = f"v({left},{right})"
-        existing_expr = (device.name, expr.replace(" ", "").lower()) in existing
+        existing_expr = expression_measurement_key(device.name, expr) in existing
         if existing_expr and family != "diode":
             continue
         value: float | None
@@ -188,7 +190,7 @@ def non_mos_rule_candidates(
                 minimum = f"{-value:g}"
             if family == "diode":
                 forward_value = _numeric_parameter(device, ("fv_max",))
-                forward_key = (device.name, expr.replace(" ", "").lower(), "forward_voltage")
+                forward_key = (*expression_measurement_key(device.name, expr), "forward_voltage")
                 if forward_value and forward_key not in existing_kinds:
                     forward, parameter_name = forward_value
                     candidates.append(
@@ -212,7 +214,7 @@ def non_mos_rule_candidates(
             pairs = [(device.ports[0], substrate), (device.ports[1], substrate)]
         for pair_left, pair_right in pairs:
             pair_expr = f"v({pair_left},{pair_right})"
-            if (device.name, pair_expr.replace(" ", "").lower()) in existing:
+            if expression_measurement_key(device.name, pair_expr) in existing:
                 continue
             candidates.append(
                 _candidate(
@@ -233,6 +235,9 @@ def non_mos_rule_candidates(
 
 
 def _model_limit_kind(left: str, right: str) -> str:
+    kind = classify_limit(f"v({left},{right})")
+    if kind != "other":
+        return kind
     pair = {left.lower(), right.lower()}
     if pair == {"d", "s"}:
         return "Vds"
@@ -269,7 +274,7 @@ def model_rule_candidates(
     margin: float = 0.10,
 ) -> list[Rule]:
     """Turn Spectre model safety parameters and MOS voltage names into candidates."""
-    existing = {(rule.target, re.sub(r"\s+", "", rule.expr).lower()) for rule in existing_rules}
+    existing = {expression_measurement_key(str(rule.effective("target")), str(rule.effective("expr") or "")) for rule in existing_rules}
     candidates: list[Rule] = []
     for device in devices:
         source = device.source.path if device.source else source_path
@@ -279,7 +284,7 @@ def model_rule_candidates(
             if value is None or not left or not right:
                 continue
             expr = f"v({left},{right})"
-            if (device.name, expr.replace(" ", "").lower()) in existing:
+            if expression_measurement_key(device.name, expr) in existing:
                 continue
             key = item.get("key", "model_limit")
             reason = f"Spectre 模型参数 {key}={value:g} 来自 {item.get('primitive', 'primitive')} 的端口 {left}/{right}；候选仍需确认是否为最终 SOA 上限。"
@@ -296,7 +301,7 @@ def model_rule_candidates(
                     terminal_pair=[left, right],
                 )
             )
-            existing.add((device.name, expr.replace(" ", "").lower()))
+            existing.add(expression_measurement_key(device.name, expr))
         if device.family in {"mos", "ldmos", "demos", "resistor"}:
             ports = {port.lower(): port for port in device.ports}
             current_port = ports.get("d") or ports.get("n1") or (device.ports[0] if device.ports else None)
@@ -304,7 +309,7 @@ def model_rule_candidates(
             if current_port and current_value:
                 value, parameter_name = current_value
                 expr = f"I({current_port})"
-                if (device.name, expr.replace(" ", "").lower()) not in existing:
+                if expression_measurement_key(device.name, expr) not in existing:
                     candidates.append(
                         _candidate(
                             device,
@@ -318,7 +323,7 @@ def model_rule_candidates(
                             terminal_pair=[current_port],
                         )
                     )
-                    existing.add((device.name, expr.replace(" ", "").lower()))
+                    existing.add(expression_measurement_key(device.name, expr))
         if device.family not in {"mos", "ldmos", "demos"}:
             continue
         ports = {port.lower(): port for port in device.ports}
@@ -342,7 +347,7 @@ def model_rule_candidates(
             expr = f"v({left},{right})"
             nominal = device.gate_voltage if limit_kind in {"Vgs", "Vgd", "Vgb"} else device.family_voltage
             value = nominal * (1.0 + margin) if nominal is not None else None
-            if (device.name, expr.replace(" ", "").lower()) in existing:
+            if expression_measurement_key(device.name, expr) in existing:
                 continue
             if value is None:
                 reason = f"Spectre 模型未提供 {limit_kind} 数值上限，保留空白检查等待用户填写。"
@@ -368,5 +373,5 @@ def model_rule_candidates(
                     route=route,
                 )
             )
-            existing.add((device.name, expr.replace(" ", "").lower()))
+            existing.add(expression_measurement_key(device.name, expr))
     return candidates

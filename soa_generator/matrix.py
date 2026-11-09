@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Iterable
 
 from .models import Device, Rule
-from .resolution import ResolvedRule, normalize_source_priority, resolve_rule_group, rule_match_key, source_route
+from .resolution import ResolvedRule, normalize_source_priority, physical_rule_key, resolve_rule_group, resolve_rule_groups, scalar_bounds_in_direction, scalar_rule_key, source_route
 
 
 _ISOLATION_PORTS = {"iso", "isub", "nbl", "pepi", "hvnwell", "hvbn", "dpw", "ddnw"}
@@ -187,7 +187,7 @@ def build_check_matrix(
     rule_list = list(rules)
     indexed: dict[tuple[str, tuple[str, ...]], list[Rule]] = {}
     for rule in rule_list:
-        target, kind, pair = rule_match_key(rule)
+        target, kind, pair = physical_rule_key(rule)
         if target != device.name.lower():
             continue
         indexed.setdefault((kind, pair), []).append(rule)
@@ -201,6 +201,10 @@ def build_check_matrix(
         status = str(definition.get("status", "missing" if definition.get("applicable", True) else "not_applicable"))
         if chosen:
             status = resolved.status
+        maximum, minimum = scalar_bounds_in_direction(chosen, raw_pair) if chosen and scalar_rule_key(chosen) else (
+            chosen.effective("maximum") if chosen else None,
+            chosen.effective("minimum") if chosen else None,
+        )
         matrix.append({
             "matrix_id": f"{device.name}:{kind}:{index}",
             "name": kind,
@@ -220,13 +224,15 @@ def build_check_matrix(
                     "enabled": rule.effective("enabled"),
                     "maximum": rule.effective("maximum"),
                     "minimum": rule.effective("minimum"),
+                    "expr": rule.effective("expr"),
                     "source": rule.source.to_dict() if rule.source else None,
                 }
                 for rule in resolved.candidates
             ],
-            "maximum": chosen.effective("maximum") if chosen else None,
-            "minimum": chosen.effective("minimum") if chosen else None,
+            "maximum": maximum,
+            "minimum": minimum,
             "rule_ids": [rule.rule_id for rule in resolved.candidates],
+            "resolution_groups": [group.to_dict() for group in resolve_rule_groups(matches, priority).values()],
             "conflict": resolved.conflict,
         })
     return matrix

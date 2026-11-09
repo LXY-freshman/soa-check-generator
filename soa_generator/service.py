@@ -28,7 +28,7 @@ from .export import model_soa_export_metadata, project_json, render_spectre, sel
 from .inference import model_rule_candidates, non_mos_rule_candidates
 from .matrix import refresh_profiles
 from .manual import parse_manual_rules
-from .models import ExportSet, Rule, SourceEvidence
+from .models import Device, ExportSet, Rule, SourceEvidence
 from .resolution import normalize_source_priority, resolve_rule_groups
 from .parsers import (
     merge_devices,
@@ -154,7 +154,9 @@ def quick_check(
     *,
     model_sources: list[dict[str, Any]] | None = None,
     model_soa_mode: str = "annotate",
+    source_priority: list[str] | None = None,
 ) -> dict[str, Any]:
+    rules = select_rules(rules, ExportSet(), source_priority=source_priority)
     static = lint_rules(rules, known_devices=set(devices) or None)
     spectre_text = render_spectre(
         rules,
@@ -714,6 +716,27 @@ def _rule_from_dict(value: dict[str, Any]) -> Rule:
     return Rule(**{key: value[key] for key in Rule.__dataclass_fields__ if key in value})
 
 
+def resolve_project_rules(body: dict[str, Any]) -> dict[str, Any]:
+    """Share rule selection with browser previews without running Spectre."""
+    rules = [_rule_from_dict(value) for value in body.get("rules", [])]
+    priority = body.get("source_priority")
+    selected = select_rules(rules, ExportSet(), source_priority=priority)
+    devices = [
+        Device(**{key: value[key] for key in Device.__dataclass_fields__ if key in value})
+        for value in body.get("devices", [])
+    ]
+    refresh_profiles(devices, rules, priority)
+    return {
+        "selected_rule_ids": [rule.rule_id for rule in selected],
+        "groups": [group.to_dict() for group in resolve_rule_groups(rules, priority).values()],
+        "profiles": [
+            {"name": device.name, "check_matrix": device.check_matrix,
+             "profile_stage": device.profile_stage, "profile_completeness": device.profile_completeness}
+            for device in devices
+        ],
+    }
+
+
 def _start_parse_job(body: dict[str, Any]) -> dict[str, str]:
     mode = str(body.get("mode", "sources"))
     if mode not in {"sources", "texts"}:
@@ -878,6 +901,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/coverage":
                 self._send_json(pdk_coverage(body.get("devices", []), body.get("rules", []), body.get("sources", [])))
                 return
+            if path == "/api/resolve_rules":
+                self._send_json(resolve_project_rules(body))
+                return
             if path == "/api/export":
                 rules = [_rule_from_dict(value) for value in body.get("rules", [])]
                 export_data = body.get("export_set", {})
@@ -933,6 +959,7 @@ class Handler(BaseHTTPRequestHandler):
                     body.get("runner", {}),
                     model_sources=body.get("model_sources", []),
                     model_soa_mode=str(body.get("model_soa_mode", "annotate")),
+                    source_priority=body.get("source_priority"),
                 )
                 self._send_json(result)
                 return

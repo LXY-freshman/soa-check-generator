@@ -67,7 +67,7 @@ def select_rules(
         candidates = [rule for rule in rules if rule.rule_id in selected and rule.effective("enabled") and rule.effective("status") not in {"missing", "not_applicable"}]
     elif export_set.device_names:
         devices = set(export_set.device_names)
-        candidates = [rule for rule in rules if rule.target in devices and rule.effective("enabled") and rule.effective("status") not in {"missing", "not_applicable"}]
+        candidates = [rule for rule in rules if rule.effective("target") in devices and rule.effective("enabled") and rule.effective("status") not in {"missing", "not_applicable"}]
     else:
         candidates = [rule for rule in rules if rule.effective("enabled") and rule.effective("status") not in {"missing", "not_applicable"}]
     resolved = resolve_rule_groups(candidates, source_priority)

@@ -175,6 +175,19 @@ def classify_device(name: str, category: str = "") -> Device:
 
 def classify_limit(expr: str, message: str | None = None) -> str:
     text = f"{expr} {message or ''}".lower()
+    match = _VOLTAGE_PAIR.search(expr or "")
+    if match:
+        pair = frozenset((match.group(1).lower(), match.group(2).lower()))
+        if pair & {"iso", "isub", "nbl", "pepi", "hvnwell", "hvbn", "dpw", "ddnw"}:
+            return "isolation_bv"
+        voltage_kinds = {
+            frozenset(("d", "s")): "Vds", frozenset(("d", "bs")): "Vds",
+            frozenset(("g", "s")): "Vgs", frozenset(("g", "bs")): "Vgs",
+            frozenset(("g", "d")): "Vgd", frozenset(("g", "b")): "Vgb",
+            frozenset(("b", "s")): "Vbs", frozenset(("d", "b")): "Vbd",
+        }
+        if pair in voltage_kinds:
+            return voltage_kinds[pair]
     for key, aliases in {
         "isolation_bv": ("v(iso", "v(isub", "v(nbl", "v(pepi", "v(b,sub)", "v(iso,sub)", "isolation"),
         "reverse_voltage": ("v(p,n)", "v(pos,neg)", "v(anode,cathode)", "reverse_voltage"),

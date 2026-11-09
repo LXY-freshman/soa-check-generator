@@ -8,6 +8,7 @@ and user overrides remain immutable and inspectable.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 import re
 from typing import Iterable
 
@@ -43,16 +44,126 @@ def _pair_from_expr(expr: str) -> tuple[str, str] | None:
     return match.group(1).lower(), match.group(2).lower()
 
 
-def rule_match_key(rule: Rule) -> tuple[str, str, tuple[str, ...]]:
-    """Identify one physical check independently of its source and rule name."""
-    pair = tuple(item.lower() for item in rule.terminal_pair)
-    if not pair:
-        parsed = _pair_from_expr(str(rule.effective("expr") or ""))
-        pair = parsed if parsed else (re.sub(r"\s+", "", str(rule.effective("expr") or "")).lower(),)
+def is_scalar_voltage_expr(expr: str) -> bool:
+    """Whether an expression is exactly one voltage pair, without SOA conditions."""
+    return bool(re.fullmatch(r"\s*v\s*\(\s*[^,\s()]+\s*,\s*[^,\s()]+\s*\)\s*", expr or "", re.I))
+
+
+def expression_measurement_key(target: str, expr: str) -> tuple[str, tuple[str, ...]]:
+    """Find existing measurements before generating a fallback candidate.
+
+    Conditional expressions intentionally never match a bare voltage pair.
+    """
+    pair = _pair_from_expr(expr) if is_scalar_voltage_expr(expr) else None
+    identity = ("voltage", *sorted(pair)) if pair else ("expression", expr.strip())
+    return target.lower(), identity
+
+
+def canonical_limit_kind(kind: str) -> str:
+    return {
+        "vsb": "Vbs", "vbs": "Vbs", "vdb": "Vbd", "vbd": "Vbd",
+        "vds": "Vds", "vsd": "Vds", "vgs": "Vgs", "vsg": "Vgs",
+        "vgd": "Vgd", "vdg": "Vgd", "vgb": "Vgb", "vbg": "Vgb",
+        "vce": "Vce", "vec": "Vce", "vcb": "Vcb", "vbc": "Vcb",
+        "vbe": "Vbe", "veb": "Vbe",
+    }.get(kind.lower(), kind)
+
+
+def _canonical_pair(kind: str, pair: tuple[str, ...]) -> tuple[tuple[str, ...], bool]:
+    if len(pair) != 2:
+        return pair, False
+    preferred = {
+        "Vds": [("d", "s"), ("d", "bs")],
+        "Vgs": [("g", "s"), ("g", "bs")],
+        "Vgd": [("g", "d")], "Vgb": [("g", "b")],
+        "Vbs": [("b", "s")], "Vbd": [("d", "b")],
+        "Vce": [("c", "e")], "Vcb": [("c", "b")], "Vbe": [("b", "e")],
+    }.get(canonical_limit_kind(kind), [])
+    canonical = next((item for item in preferred if set(item) == set(pair)), tuple(sorted(pair)))
+    return canonical, canonical != pair
+
+
+def scalar_rule_key(rule: Rule) -> tuple[str, str, tuple[str, ...]] | None:
+    expr = str(rule.effective("expr") or "")
+    if not is_scalar_voltage_expr(expr):
+        return None
+    # Use the edited expression, not a possibly stale terminal_pair cache.
+    pair = _pair_from_expr(expr) or ()
+    canonical, _reversed = _canonical_pair(str(rule.limit_kind or "other"), pair)
     return (
         str(rule.effective("target") or rule.target).lower(),
-        str(rule.limit_kind or "other"),
-        pair,
+        canonical_limit_kind(str(rule.limit_kind or "other")),
+        canonical,
+    )
+
+
+def _bound(value: object, negate: bool = False) -> str | None:
+    if value in (None, ""):
+        return None
+    raw = str(value).strip()
+    try:
+        number = Decimal(raw)
+        if number.is_finite():
+            number = -number if negate else number
+            if number == 0:
+                return "0"
+            normalized = number.normalize()
+            return format(normalized, "f") if abs(normalized.adjusted()) <= 100 else str(normalized)
+    except InvalidOperation:
+        pass
+    if not negate:
+        return raw
+    if re.fullmatch(r"-\([A-Za-z_][A-Za-z0-9_]*\)", raw):
+        return raw[2:-1]
+    if re.fullmatch(r"-[A-Za-z_][A-Za-z0-9_]*", raw):
+        return raw[1:]
+    return f"-({raw})"
+
+
+def scalar_bounds_in_direction(rule: Rule, pair: Iterable[str]) -> tuple[str | None, str | None]:
+    """Express bounds relative to the specified terminals without editing evidence."""
+    actual = _pair_from_expr(str(rule.effective("expr") or ""))
+    direction = tuple(port.lower() for port in pair)
+    maximum, minimum = rule.effective("maximum"), rule.effective("minimum")
+    if actual and len(direction) == 2 and actual == direction[::-1] and actual != direction:
+        return _bound(minimum, True), _bound(maximum, True)
+    return _bound(maximum), _bound(minimum)
+
+
+def canonical_scalar_bounds(rule: Rule) -> tuple[str | None, str | None]:
+    key = scalar_rule_key(rule)
+    return scalar_bounds_in_direction(rule, key[2] if key else ())
+
+
+def physical_rule_key(rule: Rule) -> tuple[str, str, tuple[str, ...]]:
+    """Identify a terminal check for the matrix, including conditional evidence."""
+    expr = str(rule.effective("expr") or "")
+    kind = canonical_limit_kind(str(rule.limit_kind or "other"))
+    pair = _pair_from_expr(expr) or tuple(str(port).lower() for port in rule.terminal_pair)
+    canonical, _reversed = _canonical_pair(kind, pair)
+    return str(rule.effective("target") or "").lower(), kind, canonical
+
+
+def _context(rule: Rule) -> tuple[str, ...]:
+    # Different scopes, sections and timing/report settings must not suppress
+    # each other in an exported assertion set.
+    return tuple(str(rule.effective(key) or "") for key in ("target_kind", "section", "duration", "level"))
+
+
+def rule_match_key(rule: Rule) -> tuple[str, str, tuple[str, ...]]:
+    """Identify one physical check independently of its source and rule name."""
+    scalar_key = scalar_rule_key(rule)
+    if scalar_key is not None:
+        target, kind, pair = scalar_key
+        maximum, minimum = canonical_scalar_bounds(rule)
+        # A lower-only and an upper-only assertion are complementary; both
+        # must survive source selection when a PDK writes them separately.
+        shape = ("max" if maximum is not None else "", "min" if minimum is not None else "")
+        return target, kind, ("voltage", *pair, *shape, "context", *_context(rule))
+    return (
+        str(rule.effective("target") or rule.target).lower(),
+        canonical_limit_kind(str(rule.limit_kind or "other")),
+        ("expression", str(rule.effective("expr") or "").strip(), "context", *_context(rule)),
     )
 
 
@@ -145,12 +256,15 @@ def resolve_rule_group(
     )
     ordered = tuple(rule for _index, rule in indexed)
     chosen = ordered[0]
-    complete_candidates = [candidate for candidate in ordered if _complete(candidate)]
-    bounds = {
-        (candidate.effective("maximum"), candidate.effective("minimum"))
-        for candidate in complete_candidates
-    }
-    conflict = len(bounds) > 1
+    comparable: dict[tuple[str, str, tuple[str, ...]], set[tuple[str | None, str | None]]] = {}
+    for candidate in ordered:
+        if not _complete(candidate):
+            continue
+        bounds = canonical_scalar_bounds(candidate) if scalar_rule_key(candidate) else (
+            _bound(candidate.effective("maximum")), _bound(candidate.effective("minimum"))
+        )
+        comparable.setdefault(rule_match_key(candidate), set()).add(bounds)
+    conflict = any(len(bounds) > 1 for bounds in comparable.values())
     route = source_route(chosen)
     selected_status = _status(chosen)
     # A confirmed user value resolves a disagreement, while preserving the
