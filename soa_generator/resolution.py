@@ -145,9 +145,10 @@ def resolve_rule_group(
     )
     ordered = tuple(rule for _index, rule in indexed)
     chosen = ordered[0]
+    complete_candidates = [candidate for candidate in ordered if _complete(candidate)]
     bounds = {
-        (chosen_rule.effective("maximum"), chosen_rule.effective("minimum"))
-        for chosen_rule in ordered
+        (candidate.effective("maximum"), candidate.effective("minimum"))
+        for candidate in complete_candidates
     }
     conflict = len(bounds) > 1
     route = source_route(chosen)

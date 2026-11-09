@@ -13,7 +13,8 @@
 | 端口、隔离环、NBL/PSUB/PEPI、组合器件 | ADR 0006/0007、GLOSSARY | 已实现基础版；端口档案明确区分 `PSUB=bulk_substrate` 与 `NBL/PEPI/ISO=isolation_structure` |
 | MOS 和非 MOS 模型参数/命名推断候选 | ADR 0005、PROJECT_PLAN | 已实现基础版 |
 | 工艺手册限值作为独立证据参与规则选择 | ADR 0005/0007、适配器文档 | `soa-adapter/v1.check_rules` 已实现，保留路径、页码、备注和 `documented` 置信度 |
-| 直接解析选中的手册文本/PDF | PROJECT_PLAN、GLOSSARY | 已实现明确行内限值提取；曲线、典型值和范围保留为未转换证据 |
+| 直接解析选中的手册文本/PDF | PROJECT_PLAN、GLOSSARY | 已实现行内限值和表头/器件行/续行表格提取；曲线、典型值和范围保留为未转换证据 |
+| 真实 PDK 覆盖验证 | PROJECT_PLAN、远程 PDK 研究记录 | 已完成 BCDA V1.3 脱敏基线；页面和 `/api/coverage` 提供摘要，端口缺失、完整值缺失和来源冲突进入后续工作清单 |
 | 用户规则复制、删除、恢复、覆盖和导出 | PROJECT_PLAN、GLOSSARY | 已实现 |
 | 父器件/子器件依赖导出 | ADR 0006、GLOSSARY | 已实现基础版 |
 | Spectre 快速检查 | PROJECT_PLAN、README | 已实现 |

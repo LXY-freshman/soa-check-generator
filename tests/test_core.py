@@ -4,6 +4,7 @@ from pathlib import Path
 
 from soa_generator.classify import apply_port_metadata, classify_device
 from soa_generator.adapters import apply_adapter_config
+from soa_generator.coverage import pdk_coverage
 from soa_generator.export import ExportSet, model_soa_export_metadata, project_json, render_spectre, select_rules
 from soa_generator.models import Device, Rule, SourceEvidence
 from soa_generator.manual import parse_manual_rules
@@ -149,6 +150,34 @@ esd6_pnp_nbl
         self.assertEqual(item.status, "conflict")
         self.assertTrue(item.conflict)
 
+    def test_curve_source_does_not_conflict_with_scalar_absolute_candidate(self) -> None:
+        curve = Rule(
+            rule_id="curve",
+            name="nld12_vds_curve",
+            target="nld12_iso_ckt",
+            expr="v(d,bs)>=23.9&&v(g,bs)<1",
+            limit_kind="Vds",
+            terminal_pair=["d", "bs"],
+            source=SourceEvidence(path="soa_spe.mdl", mechanism="spectre_assert"),
+        )
+        scalar = Rule(
+            rule_id="scalar",
+            name="nld12_vds_absolute",
+            target="nld12_iso_ckt",
+            expr="v(d,bs)",
+            maximum="13.2",
+            minimum="-13.2",
+            limit_kind="Vds",
+            terminal_pair=["d", "bs"],
+            confidence="inferred",
+            status="inferred",
+            route="inference",
+            source=SourceEvidence(path="model.scs", mechanism="inference"),
+        )
+        item = next(iter(resolve_rule_groups([curve, scalar]).values()))
+        self.assertEqual(item.chosen.rule_id, "curve")
+        self.assertFalse(item.conflict)
+
     def test_confirmed_rule_resolves_source_conflict(self) -> None:
         source = Rule(
             rule_id="source",
@@ -241,6 +270,32 @@ esd6_pnp_nbl
         matrix = next(item for item in payload["devices"][0]["check_matrix"] if item["limit_kind"] == "Vgs")
         self.assertEqual(matrix["route"], "document")
         self.assertEqual(matrix["maximum"], "5.5")
+
+    def test_manual_table_extracts_columns_and_continuation_rows(self) -> None:
+        device = classify_device("nld12_iso_ckt")
+        apply_port_metadata(device, ["d", "g", "bs", "nbl", "psub"])
+        text = """Device | Gate BV | DSB BV | NBL-PSUB BV
+nld12_iso_ckt | 5.5 V | 13.2 V | 30 V
+nld12_ls_ckt
+5.5 V | 13.2 V | 30 V
+"""
+        rules = parse_manual_rules(text, "table.txt", [device, classify_device("nld12_ls_ckt")])
+        by_key = {(rule.target, rule.limit_kind): rule for rule in rules}
+        self.assertEqual(by_key[("nld12_iso_ckt", "Vgs")].maximum, "5.5")
+        self.assertEqual(by_key[("nld12_iso_ckt", "Vds")].maximum, "13.2")
+        self.assertEqual(by_key[("nld12_iso_ckt", "isolation_bv")].maximum, "30")
+        self.assertEqual(by_key[("nld12_ls_ckt", "Vgs")].maximum, "5.5")
+
+    def test_pdk_coverage_reports_missing_and_conflict_checks(self) -> None:
+        coverage = pdk_coverage([
+            {"name": "n50", "family": "mos", "scope": "active", "check_matrix": [
+                {"limit_kind": "Vds", "applicable": True, "status": "missing"},
+                {"limit_kind": "Vgs", "applicable": True, "status": "conflict", "conflict": True},
+            ]},
+        ], [{"route": "spectre_soa", "status": "source"}], [{"kind": "spectre_soa"}])
+        self.assertEqual(coverage["schema"], "soa-coverage/v1")
+        self.assertEqual(coverage["summary"]["devices_with_missing_checks"], 1)
+        self.assertEqual(coverage["summary"]["devices_with_conflicts"], 1)
 
     def test_model_ports_and_isolation_candidate(self) -> None:
         fixture = Path(__file__).parent / "fixtures" / "model_ports.scs"

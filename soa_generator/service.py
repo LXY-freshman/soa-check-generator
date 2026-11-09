@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 from .discovery import CandidateFile, discover_local, summarize_candidates
 from .adapters import apply_adapter_config
 from .classify import apply_port_metadata, classify_device
+from .coverage import pdk_coverage
 from .export import model_soa_export_metadata, project_json, render_spectre, select_rules
 from .inference import model_rule_candidates, non_mos_rule_candidates
 from .matrix import refresh_profiles
@@ -330,12 +331,14 @@ def parse_source(source: dict[str, Any], adapter_config: dict[str, Any] | None =
     devices = merge_devices(devices, rules)
     refresh_profiles(devices, rules, effective_priority)
     safe_source = {key: value for key, value in source.items() if key != "password"}
+    coverage = pdk_coverage([item.to_dict() for item in devices], [item.to_dict() for item in rules], [safe_source])
     return {
         "source": safe_source,
         "adapter": adapter_metadata(adapter_config),
         "source_priority": effective_priority,
         "devices": [item.to_dict() for item in devices],
         "rules": [item.to_dict() for item in rules],
+        "coverage": coverage,
         "summary": {"files": 1, "devices": len(devices), "rules": len(rules)},
     }
 
@@ -372,12 +375,14 @@ def parse_text(text: str, path: str, adapter_config: dict[str, Any] | None = Non
     devices = merge_devices(devices, rules)
     refresh_profiles(devices, rules, effective_priority)
     model_soa = detect_model_soa(text)
+    coverage = pdk_coverage([item.to_dict() for item in devices], [item.to_dict() for item in rules], [{"path": path, "kind": "document" if lower.endswith((".pdf", ".txt")) else "browser_file"}])
     return {
         "source": {"kind": "browser_file", "path": path},
         "adapter": adapter_metadata(adapter_config),
         "source_priority": effective_priority,
         "devices": [item.to_dict() for item in devices],
         "rules": [item.to_dict() for item in rules],
+        "coverage": coverage,
         "file_results": [{
             "path": path,
             "kind": "device_list" if "devicelist" in lower or lower.endswith("device_list") else "model_spectre",
@@ -517,6 +522,7 @@ def parse_sources(sources: list[dict[str, Any]], adapter_config: dict[str, Any] 
         "source_priority": effective_priority,
         "devices": [item.to_dict() for item in devices],
         "rules": [item.to_dict() for item in rules],
+        "coverage": pdk_coverage([item.to_dict() for item in devices], [item.to_dict() for item in rules], safe_sources),
         "file_results": file_results,
         "evidence": evidence,
         "summary": {"files": len(seen_paths), "devices": len(devices), "rules": len(rules), "inferred_rules": len(non_mos) + len(model_rules), "evidence": len(evidence)},
@@ -690,7 +696,10 @@ class Handler(BaseHTTPRequestHandler):
                 rules.extend(non_mos)
                 devices = merge_devices(devices, rules)
                 refresh_profiles(devices, rules, effective_priority)
-                self._send_json({"adapter": adapter_metadata(body.get("adapter_config")), "source_priority": effective_priority, "devices": [item.to_dict() for item in devices], "rules": [item.to_dict() for item in rules], "file_results": file_results, "summary": {"files": len(body.get("files", [])), "devices": len(devices), "rules": len(rules), "inferred_rules": len(non_mos) + len(model_rules)}})
+                self._send_json({"adapter": adapter_metadata(body.get("adapter_config")), "source_priority": effective_priority, "devices": [item.to_dict() for item in devices], "rules": [item.to_dict() for item in rules], "file_results": file_results, "coverage": pdk_coverage([item.to_dict() for item in devices], [item.to_dict() for item in rules], file_results), "summary": {"files": len(body.get("files", [])), "devices": len(devices), "rules": len(rules), "inferred_rules": len(non_mos) + len(model_rules)}})
+                return
+            if path == "/api/coverage":
+                self._send_json(pdk_coverage(body.get("devices", []), body.get("rules", []), body.get("sources", [])))
                 return
             if path == "/api/export":
                 rules = [_rule_from_dict(value) for value in body.get("rules", [])]
