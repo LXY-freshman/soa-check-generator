@@ -250,7 +250,7 @@ def _isolation_pairs(device: Device) -> list[tuple[str, str]]:
     ports = {port.lower(): port for port in device.ports}
     pairs: list[tuple[str, str]] = []
     for left_names, right_names in [
-        (("iso",), ("b", "bs", "sub")),
+        (("iso",), ("b", "bs", "sub", "psub")),
         (("isub",), ("b", "bs", "sub")),
         (("nbl",), ("psub", "pepi", "b", "bs", "d")),
         (("pepi",), ("psub",)),

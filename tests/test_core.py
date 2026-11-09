@@ -8,7 +8,7 @@ from soa_generator.coverage import pdk_coverage
 from soa_generator.export import ExportSet, model_soa_export_metadata, project_json, render_spectre, select_rules
 from soa_generator.models import Device, Rule, SourceEvidence
 from soa_generator.manual import parse_manual_rules
-from soa_generator.parsers import detect_model_soa, parse_device_list, parse_model_definitions, parse_model_limits, parse_model_parameters, parse_spectre_asserts, parse_subckt_dependencies
+from soa_generator.parsers import detect_model_soa, parse_device_list, parse_model_definitions, parse_model_limits, parse_model_parameters, parse_spectre_asserts, parse_subckt_dependencies, topology_rule_candidates
 from soa_generator.resolution import resolve_rule_groups
 from soa_generator.schema import validate_adapter_config, validate_project_payload
 from soa_generator.service import _spectre_diagnostics, parse_sources, parse_text, parse_texts
@@ -98,6 +98,16 @@ esd6_pnp_nbl
         self.assertTrue(isolation)
         self.assertTrue(all(rule["maximum"] is None for rule in isolation))
         self.assertTrue(all(rule["status"] == "missing" and not rule["enabled"] for rule in isolation))
+
+    def test_isolation_ring_checks_inner_body_and_outer_psub(self) -> None:
+        device = classify_device("n50_iso_30v_ckt")
+        apply_port_metadata(device, ["d", "g", "s", "b", "iso", "psub"])
+        rules = topology_rule_candidates([device], [])
+        pairs = {tuple(rule.terminal_pair): rule for rule in rules}
+        self.assertIn(("iso", "b"), pairs)
+        self.assertIn(("iso", "psub"), pairs)
+        self.assertEqual(pairs[("iso", "b")].maximum, "30")
+        self.assertEqual(pairs[("iso", "psub")].maximum, "30")
 
     def test_physical_matrix_covers_non_mos_terminal_checks(self) -> None:
         text = """inline subckt dio5 (p n)\ninline subckt npn5 (c b e)\ninline subckt rpoly (n1 n2 sub)\ninline subckt mim_5v (top bot)\n"""
