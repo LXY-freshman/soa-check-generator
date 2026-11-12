@@ -6,30 +6,25 @@ The public repository contains only source code, synthetic fixtures, and generic
 
 ## Run locally
 
-Python 3.10 or newer is required.
+Python 3.6.6 or newer is required on this compatibility branch.
 
-This main line targets modern Python. The customer-compatible Python 3.6.6 implementation is maintained separately on the public `py36-compat` branch and has its own dependency and validation instructions.
+Install `dataclasses` from `requirements-py36.txt` before running Python 3.6.6. Install the optional `pypdf` entry when PDF extraction is needed, then run `./run_py36_tests.sh` before starting development. The branch targets Linux/RHEL7.9 and preserves the same parser, service, CLI, export, and validation workflows as the modern main line.
 
 ```bash
-python3 -m soa_generator.service --port 8765
+python3.6 -m soa_generator.service --port 8765
 ```
 
 Open `http://127.0.0.1:8765/`. The service reads only paths and files that the user selects. It can work with local paths and read-only SSH sources. Archives and unextracted process packages are outside the supported input boundary.
 
-For a convenience launcher:
-
-- Windows: run `start_soa_generator.bat`.
-- Linux/macOS: run `./start_soa_generator.sh`.
-
-The launcher starts the local service and may open a browser. PDF extraction is optional and requires `pypdf`.
+PDF extraction is optional; install the pinned `pypdf` entry from `requirements-py36.txt` when it is needed.
 
 ## Command line
 
 ```bash
-python3 -m soa_generator.cli scan /path/to/models
-python3 -m soa_generator.cli parse /path/to/soa-source.scs
-python3 -m soa_generator.cli export /path/to/soa-source.scs /tmp/soa-generated.scs --formats spectre json
-python3 -m soa_generator.cli export /path/to/soa-source.scs /tmp/soa-generated.scs \
+python3.6 -m soa_generator.cli scan /path/to/models
+python3.6 -m soa_generator.cli parse /path/to/soa-source.scs
+python3.6 -m soa_generator.cli export /path/to/soa-source.scs /tmp/soa-generated.scs --formats spectre json
+python3.6 -m soa_generator.cli export /path/to/soa-source.scs /tmp/soa-generated.scs \
   --adapter-config adapters/example.json
 ```
 
@@ -39,15 +34,14 @@ The importer understands Spectre `assert` sources, model-internal SOA clues, dev
 
 An adapter is a `soa-adapter/v1` JSON file that maps a user's naming conventions to generic device families, port roles, topology markers, and documented checks. The repository includes only a synthetic example. Replace its patterns and evidence paths with values from your own private process environment; do not commit those source files or credentials.
 
-## Source packages
+## Offline dependencies
 
-The build and packaging scripts are included for reproducibility. They operate on the public source tree and do not include ignored build output, screenshots, private research notes, or process data. Generated archives under `dist/` are intentionally ignored by Git.
+The parser, rule matrix, CLI, and local service use the standard library plus the `dataclasses` backport on Python 3.6. In an offline environment, provide the wheels listed in `requirements-py36.txt` and install them with `pip --no-index --find-links /path/to/wheels -r requirements-py36.txt`.
 
 ## Tests
 
 ```bash
-python3 -m compileall -q soa_generator tests
-python3 -m unittest discover -s tests -v
+./run_py36_tests.sh
 node -e "const fs=require('fs');const s=fs.readFileSync('web/index.html','utf8').match(/<script>([\\s\\S]*)<\\/script>/)[1];new Function(s);console.log('web script syntax ok')"
 ```
 

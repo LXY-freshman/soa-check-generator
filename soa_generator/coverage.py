@@ -1,16 +1,17 @@
 """Coverage summaries for an imported PDK parse session."""
 
-from __future__ import annotations
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
+
 
 from collections import Counter
 from typing import Iterable
 
 
 def pdk_coverage(
-    devices: Iterable[dict[str, object]],
-    rules: Iterable[dict[str, object]],
-    sources: Iterable[dict[str, object]] = (),
-) -> dict[str, object]:
+    devices: Iterable[Dict[str, object]],
+    rules: Iterable[Dict[str, object]],
+    sources: Iterable[Dict[str, object]] = (),
+) -> Dict[str, object]:
     device_list = list(devices)
     rule_list = list(rules)
     source_list = list(sources)
@@ -24,8 +25,8 @@ def pdk_coverage(
         bool((device.get("source") or {}).get("mechanism") == "manual_table") and not device.get("model_sources")
         for device in device_list
     )
-    matrix_status_counts: Counter[str] = Counter()
-    device_reports: list[dict[str, object]] = []
+    matrix_status_counts: Counter = Counter()
+    device_reports: List[Dict[str, object]] = []
     for device in device_list:
         matrix = [item for item in (device.get("check_matrix") or []) if isinstance(item, dict)]
         matrix_status_counts.update(str(item.get("status", "unknown")) for item in matrix)

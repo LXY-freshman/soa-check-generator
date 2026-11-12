@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
 import re
 
 from .models import Device, Rule
@@ -50,16 +49,16 @@ def classify_scope(name: str, category: str = "") -> str:
     return "active"
 
 
-def topology_tokens(name: str) -> list[str]:
+def topology_tokens(name: str) -> List[str]:
     value = name.lower()
     known = ("ful_iso", "iso", "isowell", "hvbn", "hvnwell", "dpw", "ddnw", "cmt", "hs", "ls", "lvt", "ulvt", "udvt", "dvt", "dep", "gg")
     return [token for token in known if token in value]
 
 
-def topology_from_ports(ports: list[str]) -> list[str]:
+def topology_from_ports(ports: List[str]) -> List[str]:
     """Return topology markers that are explicit in a model terminal list."""
     normalized = {port.strip().lower() for port in ports if port.strip()}
-    markers: list[str] = []
+    markers: List[str] = []
     for port, marker in (
         ("iso", "iso"),
         ("isub", "isub"),
@@ -78,9 +77,9 @@ def topology_from_ports(ports: list[str]) -> list[str]:
     return markers
 
 
-def apply_port_metadata(device: Device, ports: list[str]) -> Device:
+def apply_port_metadata(device: Device, ports: List[str]) -> Device:
     """Attach model-derived terminals and topology markers to a device."""
-    cleaned: list[str] = []
+    cleaned: List[str] = []
     for port in ports:
         value = port.strip().strip("(),")
         if value and value not in cleaned:
@@ -114,7 +113,7 @@ def apply_port_metadata(device: Device, ports: list[str]) -> Device:
     return device
 
 
-def family_voltage(name: str) -> float | None:
+def family_voltage(name: str) -> Optional[float]:
     value = name.lower()
     synthetic_levels = (
         ("demo_mos_low", 1.8),
@@ -162,7 +161,7 @@ def family_voltage(name: str) -> float | None:
     return float(named.group(1)) if named else None
 
 
-def isolation_voltage(name: str) -> float | None:
+def isolation_voltage(name: str) -> Optional[float]:
     value = name.lower()
     match = _ISO_VOLTAGE.search(value) or _NBL_ISO_VOLTAGE.search(value)
     return float(match.group(1)) if match else None
@@ -194,7 +193,7 @@ def classify_device(name: str, category: str = "") -> Device:
     )
 
 
-def classify_limit(expr: str, message: str | None = None) -> str:
+def classify_limit(expr: str, message: Optional[str] = None) -> str:
     text = f"{expr} {message or ''}".lower()
     match = _VOLTAGE_PAIR.search(expr or "")
     if match:
@@ -225,7 +224,7 @@ def classify_limit(expr: str, message: str | None = None) -> str:
     return "other"
 
 
-def terminal_pair(expr: str) -> list[str]:
+def terminal_pair(expr: str) -> List[str]:
     """Extract the first explicit voltage terminal pair from a Spectre expr."""
     match = _VOLTAGE_PAIR.search(expr or "")
     return [match.group(1), match.group(2)] if match else []

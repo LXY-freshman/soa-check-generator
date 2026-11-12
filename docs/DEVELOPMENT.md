@@ -10,13 +10,12 @@ Source code, synthetic tests, generic documentation, and reproducible project co
 4. Inspect `git diff --check`, `git status`, and the file list for private paths or source data.
 
 ```bash
-python3 -m compileall -q soa_generator tests
-python3 -m unittest discover -s tests -v
+./run_py36_tests.sh
 node -e "const fs=require('fs');const s=fs.readFileSync('web/index.html','utf8').match(/<script>([\\s\\S]*)<\\/script>/)[1];new Function(s);console.log('web script syntax ok')"
 git diff --check
 ```
 
-The `py36-compat` branch runs the same checks under CPython 3.6.6. The modern main line uses its documented current Python target; a main-line check does not replace compatibility-branch validation.
+The `py36-compat` branch runs `./run_py36_tests.sh` under CPython 3.6.6 after installing the pinned offline dependencies. The modern main line uses its documented current Python target; a main-line check does not replace compatibility-branch validation.
 
 Project files use `soa-project/v1`. Process differences belong in a private `soa-adapter/v1` JSON file and should be validated with `/api/validate_adapter` before use.
 

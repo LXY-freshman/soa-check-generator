@@ -1,8 +1,9 @@
 """Explicit isolation terminal relations shared by rules and the check matrix."""
 
-from __future__ import annotations
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
 
-from dataclasses import dataclass
+
+from ._compat import dataclass
 import re
 
 from .models import Device, Rule
@@ -18,11 +19,11 @@ class IsolationConnection:
     side: str
     description: str
     limit_kind: str = "isolation_bv"
-    source: dict[str, object] | None = None
+    source: Optional[Dict[str, object]] = None
     verified: bool = False
 
 
-def isolation_connections(device: Device) -> list[IsolationConnection]:
+def isolation_connections(device: Device) -> List[IsolationConnection]:
     """Expand supported relations using actual port spelling and direction.
 
     A substrate port alone does not prove isolation. No absent terminals or
@@ -31,7 +32,7 @@ def isolation_connections(device: Device) -> list[IsolationConnection]:
     ports = {port.lower(): port for port in device.ports}
     if device.isolation_type == "dielectric":
         return []
-    explicit: list[IsolationConnection] = []
+    explicit: List[IsolationConnection] = []
     for edge in device.isolation_junctions:
         p = ports.get(str(edge.get("p_port", "")).lower())
         n = ports.get(str(edge.get("n_port", "")).lower())
@@ -69,7 +70,7 @@ def isolation_connections(device: Device) -> list[IsolationConnection]:
     return list({(item.left, item.right, item.limit_kind): item for item in fallback}.values())
 
 
-def bind_isolation_rule_metadata(device: Device, rules: list[Rule]) -> None:
+def bind_isolation_rule_metadata(device: Device, rules: List[Rule]) -> None:
     """Use explicit junction polarity to distinguish native forward limits."""
     for rule in rules:
         if rule.target != device.name or rule.limit_kind not in {"isolation_bv", "other"}:

@@ -1,6 +1,5 @@
-from __future__ import annotations
-
-from dataclasses import asdict, dataclass
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
+from ._compat import asdict, dataclass
 from typing import Iterable
 
 from .models import Rule
@@ -11,15 +10,15 @@ class Issue:
     severity: str
     code: str
     message: str
-    rule_id: str | None = None
+    rule_id: Optional[str] = None
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self) -> Dict[str, object]:
         return asdict(self)
 
 
-def lint_rules(rules: Iterable[Rule], known_devices: set[str] | None = None) -> list[Issue]:
-    result: list[Issue] = []
-    seen: set[str] = set()
+def lint_rules(rules: Iterable[Rule], known_devices: Optional[Set[str]] = None) -> List[Issue]:
+    result: List[Issue] = []
+    seen: Set[str] = set()
     valid_levels = {"none", "notice", "warning", "error", "fatal", None}
     for rule in rules:
         if rule.rule_id in seen:

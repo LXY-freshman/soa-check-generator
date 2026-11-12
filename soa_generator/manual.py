@@ -1,6 +1,7 @@
 """Conservative extraction of explicit device limits from process documents."""
 
-from __future__ import annotations
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
+
 
 import re
 from pathlib import Path
@@ -38,7 +39,7 @@ def _kind(value: str) -> str:
     }.get(normalized, value)
 
 
-def _number(value: str, unit: str | None) -> str:
+def _number(value: str, unit: Optional[str]) -> str:
     if not unit or unit.lower() == "v":
         return value
     normalized = unit.replace(" ", "").lower()
@@ -47,7 +48,7 @@ def _number(value: str, unit: str | None) -> str:
     return f"{value}{unit.replace(' ', '')}"
 
 
-def _device_for_line(line: str, devices: dict[str, Device]) -> tuple[str, Device | None]:
+def _device_for_line(line: str, devices: Dict[str, Device]) -> Tuple[str, Optional[Device]]:
     for name in sorted(devices, key=len, reverse=True):
         if re.search(rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])", line, re.I):
             return name, devices[name]
@@ -61,11 +62,11 @@ def _device_for_line(line: str, devices: dict[str, Device]) -> tuple[str, Device
     return "", None
 
 
-def _pair_for_kind(device: Device | None, kind: str) -> list[str]:
+def _pair_for_kind(device: Optional[Device], kind: str) -> List[str]:
     roles = device.port_roles if device else {}
     ports = {port.lower(): port for port in (device.ports if device else [])}
 
-    def find(*role_names: str) -> str | None:
+    def find(*role_names: str) -> Optional[str]:
         for port, role in roles.items():
             if role in role_names:
                 return port
@@ -105,14 +106,14 @@ def _pair_for_kind(device: Device | None, kind: str) -> list[str]:
     return terminal_pair(f"v({drain},{source})")
 
 
-def _value_after(fragment: str) -> tuple[str, str | None] | None:
+def _value_after(fragment: str) -> Optional[Tuple[str, Optional[str]]]:
     match = _VALUE_RE.search(fragment)
     if not match:
         return None
     return _number(match.group("value"), match.group("unit")), match.group("unit")
 
 
-def _header_kind(cell: str) -> str | None:
+def _header_kind(cell: str) -> Optional[str]:
     normalized = re.sub(r"[^a-z0-9]+", " ", cell.lower()).strip()
     direct = re.search(r"\bv(ds|gs|gd|gb|bs|bd|ce|cb|be)\b", normalized)
     if direct:
@@ -132,7 +133,7 @@ def _header_kind(cell: str) -> str | None:
     return None
 
 
-def _split_cells(line: str) -> list[str]:
+def _split_cells(line: str) -> List[str]:
     if "|" in line:
         return [cell.strip() for cell in line.strip().strip("|").split("|")]
     if "\t" in line:
@@ -140,11 +141,15 @@ def _split_cells(line: str) -> list[str]:
     return [cell.strip() for cell in re.split(r"\s{2,}", line.strip()) if cell.strip()]
 
 
-def _table_header(line: str) -> tuple[int, list[tuple[int, str]]] | None:
+def _table_header(line: str) -> Optional[Tuple[int, List[Tuple[int, str]]]]:
     cells = _split_cells(line)
     if len(cells) < 2:
         return None
-    columns = [(index, kind) for index, cell in enumerate(cells) if (kind := _header_kind(cell))]
+    columns = []
+    for index, cell in enumerate(cells):
+        kind = _header_kind(cell)
+        if kind:
+            columns.append((index, kind))
     if not columns:
         return None
     device_index = next(
@@ -154,8 +159,8 @@ def _table_header(line: str) -> tuple[int, list[tuple[int, str]]] | None:
     return device_index, columns
 
 
-def _table_values(cells: list[str], device_index: int, columns: list[tuple[int, str]]) -> list[tuple[str, str, str | None]]:
-    result: list[tuple[str, str, str | None]] = []
+def _table_values(cells: List[str], device_index: int, columns: List[Tuple[int, str]]) -> List[Tuple[str, str, Optional[str]]]:
+    result: List[Tuple[str, str, Optional[str]]] = []
     for index, kind in columns:
         actual_index = index
         if len(cells) == len(columns):
@@ -170,10 +175,10 @@ def _table_values(cells: list[str], device_index: int, columns: list[tuple[int, 
 
 def _make_rule(
     device_name: str,
-    device: Device | None,
+    device: Optional[Device],
     kind: str,
-    maximum: str | None,
-    minimum: str | None,
+    maximum: Optional[str],
+    minimum: Optional[str],
     source_path: str,
     page_number: int,
     line_number: int,
@@ -208,7 +213,7 @@ def _make_rule(
     return rule
 
 
-def _line_candidate(line: str, device_name: str, device: Device | None) -> tuple[str, str, str | None, str | None] | None:
+def _line_candidate(line: str, device_name: str, device: Optional[Device]) -> Optional[Tuple[str, str, Optional[str], Optional[str]]]:
     kind_match = _KIND_RE.search(line)
     kind = _kind(kind_match.group("kind")) if kind_match else ""
     if not kind:
@@ -239,7 +244,7 @@ def _line_candidate(line: str, device_name: str, device: Device | None) -> tuple
     return kind, maximum, minimum, "从手册文本提取的明确限值；未将曲线或典型值转换为单一阈值。"
 
 
-def parse_manual_rules(text: str, source_path: str, devices: Iterable[Device] = ()) -> list[Rule]:
+def parse_manual_rules(text: str, source_path: str, devices: Iterable[Device] = ()) -> List[Rule]:
     """Extract explicit line and table limits while preserving provenance.
 
     Supported tables use pipe, tab, or multi-space columns. Curve, typical,
@@ -247,10 +252,10 @@ def parse_manual_rules(text: str, source_path: str, devices: Iterable[Device] = 
     into a scalar SOA limit.
     """
     known = {device.name: device for device in devices}
-    rules: list[Rule] = []
-    seen: set[tuple[str, str, str | None, str | None, int, int]] = set()
+    rules: List[Rule] = []
+    seen: Set[Tuple[str, str, Optional[str], Optional[str], int, int]] = set()
     for page_number, page_text in enumerate(text.split("\f"), 1):
-        table: tuple[int, list[tuple[int, str]]] | None = None
+        table: Optional[Tuple[int, List[Tuple[int, str]]]] = None
         pending_device = ""
         for line_number, raw in enumerate(page_text.splitlines(), 1):
             line = raw.strip()

@@ -1,7 +1,6 @@
-from __future__ import annotations
-
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
 import os
-from dataclasses import asdict, dataclass
+from ._compat import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
@@ -12,11 +11,11 @@ class CandidateFile:
     kind: str
     size: int
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self) -> Dict[str, object]:
         return asdict(self)
 
 
-def _kind(path: str) -> str | None:
+def _kind(path: str) -> Optional[str]:
     name = os.path.basename(path).lower()
     if name.endswith(".devicelist") or name == "device_list":
         return "device_list"
@@ -37,8 +36,8 @@ def _kind(path: str) -> str | None:
     return None
 
 
-def discover_local(root: str, max_files: int = 100_000, max_depth: int = 8) -> list[CandidateFile]:
-    result: list[CandidateFile] = []
+def discover_local(root: str, max_files: int = 100_000, max_depth: int = 8) -> List[CandidateFile]:
+    result: List[CandidateFile] = []
     root_depth = os.path.abspath(root).count(os.sep)
     for current, dirs, files in os.walk(root):
         depth = os.path.abspath(current).count(os.sep) - root_depth
@@ -63,8 +62,8 @@ def discover_local(root: str, max_files: int = 100_000, max_depth: int = 8) -> l
     return result
 
 
-def summarize_candidates(candidates: Iterable[CandidateFile]) -> dict[str, int]:
-    summary: dict[str, int] = {}
+def summarize_candidates(candidates: Iterable[CandidateFile]) -> Dict[str, int]:
+    summary: Dict[str, int] = {}
     for item in candidates:
         summary[item.kind] = summary.get(item.kind, 0) + 1
     return summary

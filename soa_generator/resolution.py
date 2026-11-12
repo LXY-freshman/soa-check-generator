@@ -5,9 +5,10 @@ chooses a candidate only at the matrix/export boundary, so source evidence
 and user overrides remain immutable and inspectable.
 """
 
-from __future__ import annotations
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
 
-from dataclasses import dataclass
+
+from ._compat import dataclass
 from decimal import Decimal, InvalidOperation
 import re
 from typing import Iterable
@@ -27,17 +28,17 @@ DEFAULT_SOURCE_PRIORITY = [
 ]
 
 
-def normalize_source_priority(priority: Iterable[str] | None) -> list[str]:
+def normalize_source_priority(priority: Optional[Iterable[str]]) -> List[str]:
     """Return a stable priority list while keeping user confirmation fixed first."""
     requested = [str(item).strip() for item in (priority or []) if str(item).strip()]
-    result: list[str] = []
+    result: List[str] = []
     for item in ["user_confirmed", *requested, *DEFAULT_SOURCE_PRIORITY]:
         if item not in result:
             result.append(item)
     return result
 
 
-def _pair_from_expr(expr: str) -> tuple[str, str] | None:
+def _pair_from_expr(expr: str) -> Optional[Tuple[str, str]]:
     match = re.search(r"\bv\s*\(\s*([^,\s()]+)\s*,\s*([^,\s()]+)\s*\)", expr or "", re.I)
     if not match:
         return None
@@ -49,7 +50,7 @@ def is_scalar_voltage_expr(expr: str) -> bool:
     return bool(re.fullmatch(r"\s*v\s*\(\s*[^,\s()]+\s*,\s*[^,\s()]+\s*\)\s*", expr or "", re.I))
 
 
-def expression_measurement_key(target: str, expr: str) -> tuple[str, tuple[str, ...]]:
+def expression_measurement_key(target: str, expr: str) -> Tuple[str, Tuple[str, ...]]:
     """Find existing measurements before generating a fallback candidate.
 
     Conditional expressions intentionally never match a bare voltage pair.
@@ -69,7 +70,7 @@ def canonical_limit_kind(kind: str) -> str:
     }.get(kind.lower(), kind)
 
 
-def _canonical_pair(kind: str, pair: tuple[str, ...]) -> tuple[tuple[str, ...], bool]:
+def _canonical_pair(kind: str, pair: Tuple[str, ...]) -> Tuple[Tuple[str, ...], bool]:
     if len(pair) != 2:
         return pair, False
     preferred = {
@@ -83,7 +84,7 @@ def _canonical_pair(kind: str, pair: tuple[str, ...]) -> tuple[tuple[str, ...], 
     return canonical, canonical != pair
 
 
-def scalar_rule_key(rule: Rule) -> tuple[str, str, tuple[str, ...]] | None:
+def scalar_rule_key(rule: Rule) -> Optional[Tuple[str, str, Tuple[str, ...]]]:
     expr = str(rule.effective("expr") or "")
     if not is_scalar_voltage_expr(expr):
         return None
@@ -97,7 +98,7 @@ def scalar_rule_key(rule: Rule) -> tuple[str, str, tuple[str, ...]] | None:
     )
 
 
-def _bound(value: object, negate: bool = False) -> str | None:
+def _bound(value: object, negate: bool = False) -> Optional[str]:
     if value in (None, ""):
         return None
     raw = str(value).strip()
@@ -120,7 +121,7 @@ def _bound(value: object, negate: bool = False) -> str | None:
     return f"-({raw})"
 
 
-def scalar_bounds_in_direction(rule: Rule, pair: Iterable[str]) -> tuple[str | None, str | None]:
+def scalar_bounds_in_direction(rule: Rule, pair: Iterable[str]) -> Tuple[Optional[str], Optional[str]]:
     """Express bounds relative to the specified terminals without editing evidence."""
     actual = _pair_from_expr(str(rule.effective("expr") or ""))
     direction = tuple(port.lower() for port in pair)
@@ -130,12 +131,12 @@ def scalar_bounds_in_direction(rule: Rule, pair: Iterable[str]) -> tuple[str | N
     return _bound(maximum), _bound(minimum)
 
 
-def canonical_scalar_bounds(rule: Rule) -> tuple[str | None, str | None]:
+def canonical_scalar_bounds(rule: Rule) -> Tuple[Optional[str], Optional[str]]:
     key = scalar_rule_key(rule)
     return scalar_bounds_in_direction(rule, key[2] if key else ())
 
 
-def physical_rule_key(rule: Rule) -> tuple[str, str, tuple[str, ...]]:
+def physical_rule_key(rule: Rule) -> Tuple[str, str, Tuple[str, ...]]:
     """Identify a terminal check for the matrix, including conditional evidence."""
     expr = str(rule.effective("expr") or "")
     kind = canonical_limit_kind(str(rule.limit_kind or "other"))
@@ -144,13 +145,13 @@ def physical_rule_key(rule: Rule) -> tuple[str, str, tuple[str, ...]]:
     return str(rule.effective("target") or "").lower(), kind, canonical
 
 
-def _context(rule: Rule) -> tuple[str, ...]:
+def _context(rule: Rule) -> Tuple[str, ...]:
     # Different scopes, sections and timing/report settings must not suppress
     # each other in an exported assertion set.
     return tuple(str(rule.effective(key) or "") for key in ("target_kind", "section", "duration", "level"))
 
 
-def rule_match_key(rule: Rule) -> tuple[str, str, tuple[str, ...]]:
+def rule_match_key(rule: Rule) -> Tuple[str, str, Tuple[str, ...]]:
     """Identify one physical check independently of its source and rule name."""
     scalar_key = scalar_rule_key(rule)
     if scalar_key is not None:
@@ -212,9 +213,9 @@ def _complete(rule: Rule) -> bool:
 class ResolvedRule:
     """One selected candidate plus the evidence needed to explain it."""
 
-    key: tuple[str, str, tuple[str, ...]]
-    chosen: Rule | None
-    candidates: tuple[Rule, ...]
+    key: Tuple[str, str, Tuple[str, ...]]
+    chosen: Optional[Rule]
+    candidates: Tuple[Rule, ...]
     route: str = "inference"
     status: str = "missing"
     conflict: bool = False
@@ -223,7 +224,7 @@ class ResolvedRule:
     def complete(self) -> bool:
         return self.chosen is not None and _complete(self.chosen)
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self) -> Dict[str, object]:
         chosen = self.chosen
         return {
             "key": [self.key[0], self.key[1], list(self.key[2])],
@@ -239,7 +240,7 @@ class ResolvedRule:
 
 def resolve_rule_group(
     rules: Iterable[Rule],
-    source_priority: Iterable[str] | None = None,
+    source_priority: Optional[Iterable[str]] = None,
 ) -> ResolvedRule:
     candidates = tuple(rules)
     if not candidates:
@@ -256,7 +257,7 @@ def resolve_rule_group(
     )
     ordered = tuple(rule for _index, rule in indexed)
     chosen = ordered[0]
-    comparable: dict[tuple[str, str, tuple[str, ...]], set[tuple[str | None, str | None]]] = {}
+    comparable: Dict[Tuple[str, str, Tuple[str, ...]], Set[Tuple[Optional[str], Optional[str]]]] = {}
     for candidate in ordered:
         if not _complete(candidate):
             continue
@@ -279,9 +280,9 @@ def resolve_rule_group(
 
 def resolve_rule_groups(
     rules: Iterable[Rule],
-    source_priority: Iterable[str] | None = None,
-) -> dict[tuple[str, str, tuple[str, ...]], ResolvedRule]:
-    groups: dict[tuple[str, str, tuple[str, ...]], list[Rule]] = {}
+    source_priority: Optional[Iterable[str]] = None,
+) -> Dict[Tuple[str, str, Tuple[str, ...]], ResolvedRule]:
+    groups: Dict[Tuple[str, str, Tuple[str, ...]], List[Rule]] = {}
     for rule in rules:
         groups.setdefault(rule_match_key(rule), []).append(rule)
     return {

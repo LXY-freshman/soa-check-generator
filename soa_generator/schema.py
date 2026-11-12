@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
 from typing import Any
 
 
@@ -7,7 +6,7 @@ PROJECT_SCHEMA = "soa-project/v1"
 ADAPTER_SCHEMA = "soa-adapter/v1"
 
 
-def project_schema_document() -> dict[str, Any]:
+def project_schema_document() -> Dict[str, Any]:
     """Return the intentionally small, dependency-free project contract."""
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -30,8 +29,8 @@ def project_schema_document() -> dict[str, Any]:
     }
 
 
-def validate_project_payload(payload: Any) -> list[dict[str, str]]:
-    issues: list[dict[str, str]] = []
+def validate_project_payload(payload: Any) -> List[Dict[str, str]]:
+    issues: List[Dict[str, str]] = []
     if not isinstance(payload, dict):
         return [{"code": "project_not_object", "message": "项目文件顶层必须是 JSON 对象。"}]
     if payload.get("schema") != PROJECT_SCHEMA:
@@ -51,7 +50,7 @@ def validate_project_payload(payload: Any) -> list[dict[str, str]]:
     if not isinstance(rules, list):
         issues.append({"code": "project_rules", "message": "rules 必须是数组。"})
     else:
-        seen: set[str] = set()
+        seen: Set[str] = set()
         for index, rule in enumerate(rules):
             if not isinstance(rule, dict):
                 issues.append({"code": "rule_object", "message": f"rules[{index}] 必须是对象。"})
@@ -75,10 +74,10 @@ def validate_project_payload(payload: Any) -> list[dict[str, str]]:
     return issues
 
 
-def validate_adapter_config(config: Any) -> list[dict[str, str]]:
+def validate_adapter_config(config: Any) -> List[Dict[str, str]]:
     if not isinstance(config, dict):
         return [{"code": "adapter_not_object", "message": "适配器配置顶层必须是 JSON 对象。"}]
-    issues: list[dict[str, str]] = []
+    issues: List[Dict[str, str]] = []
     if config.get("schema") != ADAPTER_SCHEMA:
         issues.append({"code": "adapter_schema", "message": f"适配器 schema 必须是 {ADAPTER_SCHEMA}。"})
     if not config.get("id"):
@@ -121,7 +120,7 @@ def validate_adapter_config(config: Any) -> list[dict[str, str]]:
     return issues
 
 
-def adapter_metadata(config: dict[str, Any] | None) -> dict[str, str] | None:
+def adapter_metadata(config: Optional[Dict[str, Any]]) -> Optional[Dict[str, str]]:
     if not config:
         return None
     return {"id": str(config.get("id", "")), "version": str(config.get("version", ""))}

@@ -1,0 +1,5 @@
+# Offline runtime additions for the public py36-compat branch.
+# Core parsing and the local service use only the standard library.
+dataclasses==0.8
+# Optional PDF manual extraction; omit this line if PDF support is not needed.
+pypdf==3.17.4

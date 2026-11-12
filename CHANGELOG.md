@@ -1,5 +1,11 @@
 # Changelog
 
+## py36-compat
+
+- Added a Python 3.6.6 compatibility branch for Linux/RHEL7.9 source development.
+- Added a runtime compatibility layer, pinned offline dependencies, and a branch-specific test runner.
+- Removed standalone packaging helpers from this branch; source service and CLI remain supported.
+
 ## Next
 
 - Added structured parsing for model definitions, ports, source provenance, and compound device relationships.
@@ -8,7 +14,7 @@
 - Added local and read-only SSH input, background parsing progress, coverage summaries, and Spectre quick checks.
 - Added `soa-project/v1` validation and `soa-adapter/v1` configuration for private process-specific naming and evidence.
 - Added synthetic fixtures and tests for duplicate handling, rule identity, topology, model-internal SOA clues, and export behavior.
-- Added reproducible source build and packaging helpers that exclude private and ignored artifacts.
+- Added reproducible source validation helpers that exclude private and ignored artifacts.
 
 ## Earlier
 

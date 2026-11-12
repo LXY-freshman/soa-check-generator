@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
 import argparse
 import json
 import sys
@@ -103,7 +102,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     return args.func(args)

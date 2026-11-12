@@ -1,6 +1,5 @@
-from __future__ import annotations
-
-from dataclasses import dataclass
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
+from ._compat import dataclass
 import re
 from typing import Iterable
 
@@ -14,7 +13,7 @@ class InferenceResult:
     value: str
     confidence: Confidence
     reason: str
-    margin: float | None = None
+    margin: Optional[float] = None
 
 
 def apply_margin(nominal: float, margin: float = 0.10, polarity: int = 1) -> InferenceResult:
@@ -27,7 +26,7 @@ def apply_margin(nominal: float, margin: float = 0.10, polarity: int = 1) -> Inf
     )
 
 
-def infer_terminal_limit(device: Device, terminal: str, margin: float = 0.10) -> InferenceResult | None:
+def infer_terminal_limit(device: Device, terminal: str, margin: float = 0.10) -> Optional[InferenceResult]:
     if device.family_voltage is None:
         return None
     # This is deliberately a candidate only. Existing source rules and manual
@@ -41,13 +40,13 @@ def mark_inferred(rule: Rule, reason: str) -> Rule:
     return rule
 
 
-def _port_pair(device: Device) -> tuple[str, str] | None:
+def _port_pair(device: Device) -> Optional[Tuple[str, str]]:
     if len(device.ports) < 2:
         return None
     return device.ports[0], device.ports[1]
 
 
-def _bjt_pair(device: Device) -> tuple[str, str] | None:
+def _bjt_pair(device: Device) -> Optional[Tuple[str, str]]:
     ports = {port.lower(): port for port in device.ports}
     collector = ports.get("c") or ports.get("collector")
     emitter = ports.get("e") or ports.get("eb") or ports.get("emitter")
@@ -56,7 +55,7 @@ def _bjt_pair(device: Device) -> tuple[str, str] | None:
     return _port_pair(device)
 
 
-def _named_resistor_limit(device: Device, three_terminal: bool) -> tuple[float | None, str]:
+def _named_resistor_limit(device: Device, three_terminal: bool) -> Tuple[Optional[float], str]:
     value = device.name.lower()
     if "high" in value and three_terminal:
         return 120.0, "适配器或手册提供的高压三端电阻 Vop 指导值；这不是原生 SOA 曲线。"
@@ -67,7 +66,7 @@ def _named_resistor_limit(device: Device, three_terminal: bool) -> tuple[float |
     return None, "缺少电阻工作电压或手册上限，不能安全生成数值候选。"
 
 
-def _numeric_parameter(device: Device, names: tuple[str, ...]) -> tuple[float, str] | None:
+def _numeric_parameter(device: Device, names: Tuple[str, ...]) -> Optional[Tuple[float, str]]:
     for name in names:
         raw = device.model_parameters.get(name)
         if raw is None:
@@ -84,11 +83,11 @@ def _candidate(
     name: str,
     expr: str,
     limit_kind: str,
-    maximum: str | None,
-    minimum: str | None = None,
+    maximum: Optional[str],
+    minimum: Optional[str] = None,
     reason: str,
     source_path: str,
-    terminal_pair: list[str],
+    terminal_pair: List[str],
     status: str = "inferred",
     route: str = "inference",
 ) -> Rule:
@@ -129,7 +128,7 @@ def non_mos_rule_candidates(
     existing_rules: Iterable[Rule],
     source_path: str = "<inferred>",
     margin: float = 0.10,
-) -> list[Rule]:
+) -> List[Rule]:
     """Build disabled candidates for passive/protection families.
 
     These are deliberately conservative. A candidate is emitted only when a
@@ -143,7 +142,7 @@ def non_mos_rule_candidates(
         (*expression_measurement_key(str(rule.effective("target")), str(rule.effective("expr") or "")), rule.limit_kind)
         for rule in existing_rules
     }
-    candidates: list[Rule] = []
+    candidates: List[Rule] = []
     for device in devices:
         family = device.family
         if family not in {"resistor", "diode", "varactor", "capacitor", "bjt", "esd_protection"}:
@@ -160,10 +159,10 @@ def non_mos_rule_candidates(
         existing_expr = expression_measurement_key(device.name, expr) in existing
         if existing_expr and family != "diode":
             continue
-        value: float | None
+        value: Optional[float]
         reason: str
         limit_kind: str
-        minimum: str | None = None
+        minimum: Optional[str] = None
         candidate_status = "inferred"
         if family == "resistor":
             value, reason = _named_resistor_limit(device, three_terminal_resistor)
@@ -260,7 +259,7 @@ def _model_limit_kind(left: str, right: str) -> str:
     return "terminal_voltage"
 
 
-def _numeric_value(raw: str) -> float | None:
+def _numeric_value(raw: str) -> Optional[float]:
     value = raw.strip().strip("()")
     if re.fullmatch(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?", value):
         return float(value)
@@ -272,10 +271,10 @@ def model_rule_candidates(
     existing_rules: Iterable[Rule],
     source_path: str = "<inferred>",
     margin: float = 0.10,
-) -> list[Rule]:
+) -> List[Rule]:
     """Turn Spectre model safety parameters and MOS voltage names into candidates."""
     existing = {expression_measurement_key(str(rule.effective("target")), str(rule.effective("expr") or "")) for rule in existing_rules}
-    candidates: list[Rule] = []
+    candidates: List[Rule] = []
     for device in devices:
         source = device.source.path if device.source else source_path
         for item in device.model_limits:

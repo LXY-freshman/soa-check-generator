@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
 from typing import Iterable
 
 from .models import Device, Rule
@@ -7,7 +6,7 @@ from .topology import ISOLATION_PORTS, isolation_connections
 from .resolution import ResolvedRule, normalize_source_priority, physical_rule_key, resolve_rule_group, resolve_rule_groups, scalar_bounds_in_direction, scalar_rule_key, source_route
 
 
-def _port(device: Device, *names: str) -> str | None:
+def _port(device: Device, *names: str) -> Optional[str]:
     ports = {port.lower(): port for port in device.ports}
     for name in names:
         if name.lower() in ports:
@@ -18,10 +17,10 @@ def _port(device: Device, *names: str) -> str | None:
 def _pair_item(
     device: Device,
     kind: str,
-    left_names: tuple[str, ...],
-    right_names: tuple[str, ...],
+    left_names: Tuple[str, ...],
+    right_names: Tuple[str, ...],
     reason: str,
-) -> dict[str, object]:
+) -> Dict[str, object]:
     left = _port(device, *left_names)
     right = _port(device, *right_names)
     fallback_left = left_names[0]
@@ -37,7 +36,7 @@ def _pair_item(
     }
 
 
-def _metric_item(device: Device, kind: str, port_names: tuple[str, ...], reason: str) -> dict[str, object]:
+def _metric_item(device: Device, kind: str, port_names: Tuple[str, ...], reason: str) -> Dict[str, object]:
     port = _port(device, *port_names)
     applicable = bool(port) if device.ports else True
     return {
@@ -49,7 +48,7 @@ def _metric_item(device: Device, kind: str, port_names: tuple[str, ...], reason:
     }
 
 
-def _isolation_definitions(device: Device) -> list[dict[str, object]]:
+def _isolation_definitions(device: Device) -> List[Dict[str, object]]:
     has_isolation = bool(set(token.lower() for token in device.topology) & ISOLATION_PORTS) or bool(set(port.lower() for port in device.ports) & ISOLATION_PORTS)
     result = [
         {"limit_kind": connection.limit_kind, "pair": [connection.left, connection.right],
@@ -72,7 +71,7 @@ def _isolation_definitions(device: Device) -> list[dict[str, object]]:
     return result
 
 
-def _mos_definitions(device: Device) -> list[dict[str, object]]:
+def _mos_definitions(device: Device) -> List[Dict[str, object]]:
     drain = ("d", "drain")
     source = ("bs", "s", "source") if device.family in {"ldmos", "demos"} else ("s", "source")
     body = ("b", "body", "bs")
@@ -97,7 +96,7 @@ def _mos_definitions(device: Device) -> list[dict[str, object]]:
     return items
 
 
-def _passive_definitions(device: Device) -> list[dict[str, object]]:
+def _passive_definitions(device: Device) -> List[Dict[str, object]]:
     ports = device.ports
     if device.family == "diode":
         return [
@@ -137,7 +136,7 @@ def _passive_definitions(device: Device) -> list[dict[str, object]]:
     return []
 
 
-def _definitions(device: Device) -> list[dict[str, object]]:
+def _definitions(device: Device) -> List[Dict[str, object]]:
     if device.family in {"mos", "ldmos", "demos"}:
         return _mos_definitions(device) + _isolation_definitions(device)
     items = _passive_definitions(device)
@@ -148,10 +147,10 @@ def _definitions(device: Device) -> list[dict[str, object]]:
 
 def _matches_for_definition(
     device: Device,
-    definition: dict[str, object],
-    indexed: dict[tuple[str, tuple[str, ...]], list[Rule]],
-    rules: list[Rule],
-) -> list[Rule]:
+    definition: Dict[str, object],
+    indexed: Dict[Tuple[str, Tuple[str, ...]], List[Rule]],
+    rules: List[Rule],
+) -> List[Rule]:
     kind = str(definition["limit_kind"])
     raw_pair = definition["pair"]
     pair = tuple(item.lower() for item in raw_pair) if isinstance(raw_pair, list) else ()
@@ -162,8 +161,8 @@ def _matches_for_definition(
         matches = [rule for rule in rules if rule.target.lower() == device.name.lower() and rule.limit_kind == kind]
     if not matches and kind in {"terminal_voltage", "forward_voltage", "reverse_voltage"}:
         matches = [rule for rule in rules if rule.target.lower() == device.name.lower() and rule.limit_kind == kind]
-    unique: list[Rule] = []
-    seen: set[str] = set()
+    unique: List[Rule] = []
+    seen: Set[str] = set()
     for rule in matches:
         if rule.rule_id in seen:
             continue
@@ -175,17 +174,17 @@ def _matches_for_definition(
 def build_check_matrix(
     device: Device,
     rules: Iterable[Rule] = (),
-    source_priority: list[str] | None = None,
-) -> list[dict[str, object]]:
+    source_priority: Optional[List[str]] = None,
+) -> List[Dict[str, object]]:
     priority = normalize_source_priority(source_priority)
     rule_list = list(rules)
-    indexed: dict[tuple[str, tuple[str, ...]], list[Rule]] = {}
+    indexed: Dict[Tuple[str, Tuple[str, ...]], List[Rule]] = {}
     for rule in rule_list:
         target, kind, pair = physical_rule_key(rule)
         if target != device.name.lower():
             continue
         indexed.setdefault((kind, pair), []).append(rule)
-    matrix: list[dict[str, object]] = []
+    matrix: List[Dict[str, object]] = []
     definitions = _definitions(device)
     for rule in rule_list:
         if rule.target != device.name or rule.limit_kind != "isolation_constraint":
@@ -242,8 +241,8 @@ def build_check_matrix(
     return matrix
 
 
-def refresh_profiles(devices: Iterable[Device], rules: Iterable[Rule], source_priority: list[str] | None = None) -> None:
-    rules_by_target: dict[str, list[Rule]] = {}
+def refresh_profiles(devices: Iterable[Device], rules: Iterable[Rule], source_priority: Optional[List[str]] = None) -> None:
+    rules_by_target: Dict[str, List[Rule]] = {}
     for rule in rules:
         rules_by_target.setdefault(rule.target, []).append(rule)
     for device in devices:

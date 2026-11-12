@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
 import json
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -14,11 +13,11 @@ MODEL_SOA_MODES = {"native", "annotate", "approximate", "dual"}
 
 
 def model_soa_sources(
-    sources: Iterable[dict[str, object]] | None,
-) -> list[dict[str, object]]:
+    sources: Optional[Iterable[Dict[str, object]]],
+) -> List[Dict[str, object]]:
     """Keep only safe, model-internal SOA records for export metadata."""
-    result: list[dict[str, object]] = []
-    seen: set[str] = set()
+    result: List[Dict[str, object]] = []
+    seen: Set[str] = set()
     for source in sources or []:
         if not source or not (source.get("model_internal_soa") or source.get("mechanism")):
             continue
@@ -40,13 +39,13 @@ def model_soa_sources(
 
 
 def model_soa_export_metadata(
-    sources: Iterable[dict[str, object]] | None,
+    sources: Optional[Iterable[Dict[str, object]]],
     mode: str = "native",
-) -> dict[str, object]:
+) -> Dict[str, object]:
     if mode not in MODEL_SOA_MODES:
         raise ValueError("模型内 SOA 导出模式必须是 native、annotate、approximate 或 dual。")
     records = model_soa_sources(sources)
-    warnings: list[str] = []
+    warnings: List[str] = []
     if records and mode == "annotate":
         warnings.append("本次输出只记录模型内 SOA 来源，没有复制模型内部行为。")
     if records and mode == "approximate":
@@ -59,8 +58,8 @@ def model_soa_export_metadata(
 def select_rules(
     rules: Iterable[Rule],
     export_set: ExportSet,
-    source_priority: Iterable[str] | None = None,
-) -> list[Rule]:
+    source_priority: Optional[Iterable[str]] = None,
+) -> List[Rule]:
     rules = list(rules)
     selected = set(export_set.rule_ids)
     if selected:
@@ -79,7 +78,7 @@ def render_spectre(
     rules: Iterable[Rule],
     section: str = "soa_generated",
     *,
-    model_sources: Iterable[dict[str, object]] | None = None,
+    model_sources: Optional[Iterable[Dict[str, object]]] = None,
     model_soa_mode: str = "annotate",
 ) -> str:
     metadata = model_soa_export_metadata(model_sources, model_soa_mode)
@@ -132,22 +131,22 @@ def render_spectre(
 def project_json(
     *,
     process_path: str,
-    process_version: str | None,
+    process_version: Optional[str],
     rules: Iterable[Rule],
     export_set: ExportSet,
-    extra: dict[str, object] | None = None,
-    model_sources: Iterable[dict[str, object]] | None = None,
+    extra: Optional[Dict[str, object]] = None,
+    model_sources: Optional[Iterable[Dict[str, object]]] = None,
     model_soa_mode: str = "native",
-    devices: Iterable[dict[str, object]] | None = None,
-    sources: Iterable[dict[str, object]] | None = None,
-    adapter: dict[str, object] | None = None,
-    source_priority: Iterable[str] | None = None,
+    devices: Optional[Iterable[Dict[str, object]]] = None,
+    sources: Optional[Iterable[Dict[str, object]]] = None,
+    adapter: Optional[Dict[str, object]] = None,
+    source_priority: Optional[Iterable[str]] = None,
 ) -> str:
     if adapter is not None:
         adapter_issues = validate_adapter_config(adapter)
         if adapter_issues:
             raise ValueError("适配器配置无效：" + "；".join(item["message"] for item in adapter_issues))
-    payload: dict[str, object] = {
+    payload: Dict[str, object] = {
         "schema": PROJECT_SCHEMA,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "generator": {"name": "soa-generator", "version": "0.1"},

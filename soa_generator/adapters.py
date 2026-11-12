@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
 import re
 from typing import Any, Iterable
 
@@ -11,7 +10,7 @@ from .schema import validate_adapter_config
 def apply_adapter_config(
     devices: Iterable[Device],
     rules: Iterable[Rule],
-    config: dict[str, Any] | None,
+    config: Optional[Dict[str, Any]],
 ) -> None:
     """Apply declarative process-specific metadata without changing core parsers."""
     if not config:

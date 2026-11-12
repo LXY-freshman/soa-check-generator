@@ -1,29 +1,20 @@
-from __future__ import annotations
-
-from dataclasses import asdict, dataclass, field
-from typing import Any, Literal
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
+from ._compat import asdict, dataclass, field
 
 
-Confidence = Literal["confirmed", "documented", "inferred", "missing", "conflict"]
-Mechanism = Literal[
-    "spectre_assert",
-    "hspice_biaschk",
-    "model_internal",
-    "manual_table",
-    "inference",
-    "unknown",
-]
+Confidence = str
+Mechanism = str
 
 
 @dataclass
 class SourceEvidence:
     path: str
-    line: int | None = None
-    page: int | None = None
+    line: Optional[int] = None
+    page: Optional[int] = None
     mechanism: Mechanism = "unknown"
     note: str = ""
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
 
@@ -33,31 +24,31 @@ class Device:
     category: str = "unknown"
     scope: str = "active"
     family: str = "unknown"
-    topology: list[str] = field(default_factory=list)
-    family_voltage: float | None = None
-    gate_voltage: float | None = None
+    topology: List[str] = field(default_factory=list)
+    family_voltage: Optional[float] = None
+    gate_voltage: Optional[float] = None
     gate_voltage_confidence: str = "missing"
-    isolation_voltage: float | None = None
+    isolation_voltage: Optional[float] = None
     isolation_confidence: str = "missing"
     isolation_type: str = "unknown"
-    ports: list[str] = field(default_factory=list)
-    port_roles: dict[str, str] = field(default_factory=dict)
+    ports: List[str] = field(default_factory=list)
+    port_roles: Dict[str, str] = field(default_factory=dict)
     port_confidence: str = "missing"
-    model_parameters: dict[str, str] = field(default_factory=dict)
-    model_limits: list[dict[str, str]] = field(default_factory=list)
+    model_parameters: Dict[str, str] = field(default_factory=dict)
+    model_limits: List[Dict[str, str]] = field(default_factory=list)
     parameter_confidence: str = "missing"
-    aliases: list[str] = field(default_factory=list)
-    model_sources: list[dict[str, Any]] = field(default_factory=list)
-    isolation_junctions: list[dict[str, Any]] = field(default_factory=list)
-    source: SourceEvidence | None = None
+    aliases: List[str] = field(default_factory=list)
+    model_sources: List[Dict[str, Any]] = field(default_factory=list)
+    isolation_junctions: List[Dict[str, Any]] = field(default_factory=list)
+    source: Optional[SourceEvidence] = None
     soa_status: str = "unknown"
-    associated_devices: list[str] = field(default_factory=list)
-    evidence: list[dict[str, Any]] = field(default_factory=list)
+    associated_devices: List[str] = field(default_factory=list)
+    evidence: List[Dict[str, Any]] = field(default_factory=list)
     profile_stage: str = "skeleton"
     profile_completeness: float = 0.0
-    check_matrix: list[dict[str, Any]] = field(default_factory=list)
+    check_matrix: List[Dict[str, Any]] = field(default_factory=list)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
 
@@ -66,24 +57,24 @@ class Rule:
     rule_id: str
     name: str
     target: str
-    target_kind: Literal["sub", "subs", "unknown"] = "unknown"
+    target_kind: str = "unknown"
     expr: str = ""
-    maximum: str | None = None
-    minimum: str | None = None
-    message: str | None = None
-    level: str | None = None
-    duration: str | None = None
-    section: str | None = None
-    line: int | None = None
+    maximum: Optional[str] = None
+    minimum: Optional[str] = None
+    message: Optional[str] = None
+    level: Optional[str] = None
+    duration: Optional[str] = None
+    section: Optional[str] = None
+    line: Optional[int] = None
     limit_kind: str = "other"
-    terminal_pair: list[str] = field(default_factory=list)
+    terminal_pair: List[str] = field(default_factory=list)
     device_family: str = "unknown"
     confidence: Confidence = "confirmed"
     enabled: bool = True
-    source: SourceEvidence | None = None
-    original: dict[str, Any] | None = None
-    override: dict[str, Any] = field(default_factory=dict)
-    notes: list[str] = field(default_factory=list)
+    source: Optional[SourceEvidence] = None
+    original: Optional[Dict[str, Any]] = None
+    override: Dict[str, Any] = field(default_factory=dict)
+    notes: List[str] = field(default_factory=list)
     status: str = "source"
     route: str = "native"
 
@@ -92,7 +83,7 @@ class Rule:
             return self.override[key]
         return getattr(self, key)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         value = asdict(self)
         if self.source:
             value["source"] = self.source.to_dict()
@@ -102,10 +93,10 @@ class Rule:
 @dataclass
 class ExportSet:
     name: str = "default"
-    device_names: list[str] = field(default_factory=list)
-    rule_ids: list[str] = field(default_factory=list)
+    device_names: List[str] = field(default_factory=list)
+    rule_ids: List[str] = field(default_factory=list)
     include_dependencies: bool = True
-    formats: list[str] = field(default_factory=lambda: ["spectre", "json"])
+    formats: List[str] = field(default_factory=lambda: ["spectre", "json"])
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

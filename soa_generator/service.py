@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
 import argparse
 import base64
 from io import BytesIO
@@ -15,7 +14,8 @@ import re
 import threading
 import time
 import uuid
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
+from ._compat import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
@@ -49,20 +49,20 @@ from .schema import adapter_metadata, project_schema_document, validate_adapter_
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB_ROOT = ROOT / "web"
-_PARSE_JOBS: dict[str, dict[str, Any]] = {}
+_PARSE_JOBS: Dict[str, Dict[str, Any]] = {}
 _PARSE_JOBS_LOCK = threading.Lock()
 
 
-def _progress(callback: Callable[[dict[str, Any]], None] | None, **values: Any) -> None:
+def _progress(callback: Optional[Callable[[Dict[str, Any]], None]], **values: Any) -> None:
     if callback:
         callback(values)
 
 
-def _spectre_diagnostics(output: str, exit_code: int) -> list[dict[str, object]]:
+def _spectre_diagnostics(output: str, exit_code: int) -> List[Dict[str, object]]:
     """Convert Spectre's human log into compact UI issues."""
-    issues: list[dict[str, object]] = []
+    issues: List[Dict[str, object]] = []
     lines = output.splitlines()
-    seen: set[tuple[str, str]] = set()
+    seen: Set[Tuple[str, str]] = set()
     for raw in lines:
         line = raw.strip()
         upper = line.upper()
@@ -101,7 +101,7 @@ def _quick_check_main(library_name: str, section: str = "soa_generated") -> str:
     ])
 
 
-def _run_local_spectre_check(library_text: str, *, spectre_path: str | None = None) -> tuple[int, str]:
+def _run_local_spectre_check(library_text: str, *, spectre_path: Optional[str] = None) -> Tuple[int, str]:
     executable = spectre_path or os.environ.get("SPECTRE_BIN") or shutil.which("spectre")
     if not executable:
         raise RuntimeError("本机找不到 spectre；请设置 SPECTRE_BIN，或改用 SSH 快速检查。")
@@ -115,8 +115,9 @@ def _run_local_spectre_check(library_text: str, *, spectre_path: str | None = No
         main.write_text(_quick_check_main(str(library)), encoding="utf-8")
         result = subprocess.run(
             [executable, "+log", str(log), "-raw", str(raw), str(main)],
-            capture_output=True,
-            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
             timeout=90,
             check=False,
         )
@@ -124,7 +125,7 @@ def _run_local_spectre_check(library_text: str, *, spectre_path: str | None = No
         return result.returncode, output
 
 
-def _run_remote_spectre_check(source: dict[str, Any], library_text: str) -> tuple[int, str]:
+def _run_remote_spectre_check(source: Dict[str, Any], library_text: str) -> Tuple[int, str]:
     temp_name = f"/tmp/soa-spectre-check-{os.getpid()}"
     library_encoded = base64.b64encode(library_text.encode("utf-8")).decode("ascii")
     main_text = _quick_check_main(f"{temp_name}/soa_generated.scs")
@@ -150,14 +151,14 @@ def _run_remote_spectre_check(source: dict[str, Any], library_text: str) -> tupl
 
 
 def quick_check(
-    rules: list[Rule],
-    devices: list[str],
-    runner: dict[str, Any],
+    rules: List[Rule],
+    devices: List[str],
+    runner: Dict[str, Any],
     *,
-    model_sources: list[dict[str, Any]] | None = None,
+    model_sources: Optional[List[Dict[str, Any]]] = None,
     model_soa_mode: str = "annotate",
-    source_priority: list[str] | None = None,
-) -> dict[str, Any]:
+    source_priority: Optional[List[str]] = None,
+) -> Dict[str, Any]:
     rules = select_rules(rules, ExportSet(), source_priority=source_priority)
     static = lint_rules(rules, known_devices=set(devices) or None)
     spectre_text = render_spectre(
@@ -204,7 +205,7 @@ def _extract_pdf(data: bytes, source_path: str) -> str:
     raise RuntimeError("当前环境缺少 PDF 文本提取器，请安装 pypdf 后重试。")
 
 
-def _ssh_run(source: dict[str, Any], remote_command: str) -> subprocess.CompletedProcess[str]:
+def _ssh_run(source: Dict[str, Any], remote_command: str) -> subprocess.CompletedProcess:
     host = str(source["host"]).strip()
     user = str(source.get("user", "")).strip()
     port = str(source.get("port", "")).strip()
@@ -222,7 +223,7 @@ def _ssh_run(source: dict[str, Any], remote_command: str) -> subprocess.Complete
     command.extend([target, remote_command])
     try:
         if not password:
-            return subprocess.run(command, check=True, capture_output=True, text=True)
+            return subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         # OpenSSH asks SSH_ASKPASS for a password without putting it in argv.
         with tempfile.TemporaryDirectory(prefix="soa-ssh-") as temp_dir:
             askpass = Path(temp_dir) / "askpass"
@@ -230,7 +231,7 @@ def _ssh_run(source: dict[str, Any], remote_command: str) -> subprocess.Complete
             askpass.chmod(stat.S_IRWXU)
             env = os.environ.copy()
             env.update({"SSH_ASKPASS": str(askpass), "SSH_ASKPASS_REQUIRE": "force", "DISPLAY": "soa-generator", "SOA_SSH_PASSWORD": password})
-            return subprocess.run(["setsid", "-w", *command], check=True, capture_output=True, text=True, stdin=subprocess.DEVNULL, env=env)
+            return subprocess.run(["setsid", "-w", *command], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, stdin=subprocess.DEVNULL, env=env)
     except FileNotFoundError as exc:
         raise RuntimeError("本机找不到 ssh 命令，请先安装 OpenSSH 客户端。") from exc
     except subprocess.CalledProcessError as exc:
@@ -252,7 +253,7 @@ def _ssh_run(source: dict[str, Any], remote_command: str) -> subprocess.Complete
         raise RuntimeError(message) from exc
 
 
-def _read_ssh(source: dict[str, Any], path: str) -> str:
+def _read_ssh(source: Dict[str, Any], path: str) -> str:
     if Path(path).suffix.lower() == ".pdf":
         encoded = _ssh_run(source, f"base64 -w0 -- {shlex.quote(path)}").stdout.strip()
         try:
@@ -263,21 +264,21 @@ def _read_ssh(source: dict[str, Any], path: str) -> str:
     return _ssh_run(source, command).stdout
 
 
-def read_source(source: dict[str, Any]) -> str:
+def read_source(source: Dict[str, Any]) -> str:
     if source.get("kind", "local") == "ssh":
         return _read_ssh(source, str(source["path"]))
     return _read_local(str(source["path"]))
 
 
-def _candidate_from_dict(value: dict[str, Any]) -> CandidateFile:
+def _candidate_from_dict(value: Dict[str, Any]) -> CandidateFile:
     return CandidateFile(path=str(value["path"]), kind=str(value["kind"]), size=int(value.get("size", 0)))
 
 
-def _ssh_candidates(source: dict[str, Any], root: str) -> list[CandidateFile]:
+def _ssh_candidates(source: Dict[str, Any], root: str) -> List[CandidateFile]:
     pattern = "-iname '*.devicelist' -o -name device_list -o -iname '*.mdl' -o -iname '*.scs' -o -iname '*.ckt' -o -iname '*.lib' -o -iname '*.biaschk' -o -iname '*.Cat' -o -iname '*.Cat%'"
     command = f"find {shlex.quote(root)} -type f \\( {pattern} \\) -printf '%s\\t%p\\n' | head -2000"
     result = _ssh_run(source, command)
-    candidates: list[CandidateFile] = []
+    candidates: List[CandidateFile] = []
     for line in result.stdout.splitlines():
         try:
             size, path = line.split("\t", 1)
@@ -300,7 +301,7 @@ def _ssh_candidates(source: dict[str, Any], root: str) -> list[CandidateFile]:
     return candidates
 
 
-def discover(source: dict[str, Any]) -> list[CandidateFile]:
+def discover(source: Dict[str, Any]) -> List[CandidateFile]:
     if source.get("kind", "local") == "ssh":
         return _ssh_candidates(source, str(source["path"]))
     path = Path(str(source["path"]))
@@ -310,14 +311,14 @@ def discover(source: dict[str, Any]) -> list[CandidateFile]:
     return discover_local(str(path))
 
 
-def parse_source(source: dict[str, Any], adapter_config: dict[str, Any] | None = None, source_priority: list[str] | None = None) -> dict[str, Any]:
+def parse_source(source: Dict[str, Any], adapter_config: Optional[Dict[str, Any]] = None, source_priority: Optional[List[str]] = None) -> Dict[str, Any]:
     effective_priority = normalize_source_priority(source_priority)
     text = read_source(source)
     path = str(source["path"])
     lower = path.lower()
     if "devicelist" in lower or lower.endswith("device_list"):
         devices = parse_device_list(text, path)
-        rules: list[Rule] = []
+        rules: List[Rule] = []
     else:
         rules = parse_spectre_asserts(text, path)
         devices = []
@@ -360,12 +361,12 @@ def parse_source(source: dict[str, Any], adapter_config: dict[str, Any] | None =
     }
 
 
-def parse_text(text: str, path: str, adapter_config: dict[str, Any] | None = None, source_priority: list[str] | None = None) -> dict[str, Any]:
+def parse_text(text: str, path: str, adapter_config: Optional[Dict[str, Any]] = None, source_priority: Optional[List[str]] = None) -> Dict[str, Any]:
     effective_priority = normalize_source_priority(source_priority)
     lower = path.lower()
     if "devicelist" in lower or lower.endswith("device_list"):
         devices = parse_device_list(text, path)
-        rules: list[Rule] = []
+        rules: List[Rule] = []
     else:
         rules = parse_spectre_asserts(text, path)
         devices = []
@@ -420,20 +421,20 @@ def parse_text(text: str, path: str, adapter_config: dict[str, Any] | None = Non
 
 
 def parse_sources(
-    sources: list[dict[str, Any]],
-    adapter_config: dict[str, Any] | None = None,
-    source_priority: list[str] | None = None,
-    progress: Callable[[dict[str, Any]], None] | None = None,
-) -> dict[str, Any]:
+    sources: List[Dict[str, Any]],
+    adapter_config: Optional[Dict[str, Any]] = None,
+    source_priority: Optional[List[str]] = None,
+    progress: Optional[Callable[[Dict[str, Any]], None]] = None,
+) -> Dict[str, Any]:
     effective_priority = normalize_source_priority(source_priority)
     devices = []
-    rules: list[Rule] = []
-    seen_paths: set[str] = set()
-    seen_rules: set[tuple[str, str, str, str | None, str | None]] = set()
-    file_results: list[dict[str, Any]] = []
-    evidence: list[dict[str, Any]] = []
-    document_sources: list[tuple[str, str]] = []
-    model_texts: list[tuple[str, str]] = []
+    rules: List[Rule] = []
+    seen_paths: Set[str] = set()
+    seen_rules: Set[Tuple[str, str, str, Optional[str], Optional[str]]] = set()
+    file_results: List[Dict[str, Any]] = []
+    evidence: List[Dict[str, Any]] = []
+    document_sources: List[Tuple[str, str]] = []
+    model_texts: List[Tuple[str, str]] = []
     total_sources = len(sources)
     for source_index, source in enumerate(sources, 1):
         path = str(source.get("path", ""))
@@ -468,7 +469,7 @@ def parse_sources(
         model_limits = parse_model_limits(text)
         junctions = parse_isolation_junctions(text, path)
         dependencies = parse_subckt_dependencies(text)
-        definition_map: dict[str, tuple[list[str], int]] = {}
+        definition_map: Dict[str, Tuple[List[str], int]] = {}
         for name, ports, line in definitions:
             previous = definition_map.get(name)
             if previous is None or (not previous[0] and ports):
@@ -476,7 +477,7 @@ def parse_sources(
         model_names = sorted(definition_map)
         model_soa = detect_model_soa(text)
         has_model_soa = bool(model_soa["enabled"])
-        source_devices: list[Any] = []
+        source_devices: List[Any] = []
         for name in model_names:
             ports, line = definition_map[name]
             device = classify_device(name, "model")
@@ -497,7 +498,7 @@ def parse_sources(
             device.model_sources = [{"path": path, "line": line, "kind": kind or "model_spectre"}]
             source_devices.append(device)
             devices.append(device)
-        candidates: list[Rule] = []  # Generate topology after resolving all selected diode definitions.
+        candidates: List[Rule] = []  # Generate topology after resolving all selected diode definitions.
         role = "规则源" if parsed_rules else "器件资料" if parsed_devices or model_names else "文档/证据"
         status = "已提取规则" if parsed_rules else "已识别模型内 SOA" if has_model_soa else "已识别器件/端口" if parsed_devices or model_names else "已读取，等待专用抽取器"
         file_result = {"path": path, "kind": kind or "unknown", "role": role, "status": status, "rule_count": len(parsed_rules), "device_count": len(parsed_devices), "model_count": len(model_names), "port_device_count": sum(bool(ports) for ports, _line in definition_map.values()), "topology_rule_count": len(candidates), "model_names": model_names[:100], "model_internal_soa": has_model_soa, "model_soa_mechanism": model_soa["mechanism"], "model_soa_line": model_soa["line"], "model_soa_note": model_soa["note"]}
@@ -549,7 +550,7 @@ def parse_sources(
         related = [item for item in evidence if device.name in item.get("model_names", [])]
         if device.source:
             related.append({"path": device.source.path, "role": "器件资料", "status": "已识别器件"})
-        rule_sources: dict[str, bool] = {}
+        rule_sources: Dict[str, bool] = {}
         for rule in rules:
             if rule.target == device.name and rule.source:
                 rule_sources[rule.source.path] = rule_sources.get(rule.source.path, False) or rule.confidence == "inferred"
@@ -577,18 +578,18 @@ def parse_sources(
 
 
 def parse_texts(
-    files: list[dict[str, Any]],
-    adapter_config: dict[str, Any] | None = None,
-    source_priority: list[str] | None = None,
-    progress: Callable[[dict[str, Any]], None] | None = None,
-) -> dict[str, Any]:
+    files: List[Dict[str, Any]],
+    adapter_config: Optional[Dict[str, Any]] = None,
+    source_priority: Optional[List[str]] = None,
+    progress: Optional[Callable[[Dict[str, Any]], None]] = None,
+) -> Dict[str, Any]:
     effective_priority = normalize_source_priority(source_priority)
     devices = []
-    rules: list[Rule] = []
-    seen_rules: set[tuple[str, str, str, str | None, str | None]] = set()
-    file_results: list[dict[str, Any]] = []
-    document_sources: list[tuple[str, str]] = []
-    model_texts: list[tuple[str, str]] = []
+    rules: List[Rule] = []
+    seen_rules: Set[Tuple[str, str, str, Optional[str], Optional[str]]] = set()
+    file_results: List[Dict[str, Any]] = []
+    document_sources: List[Tuple[str, str]] = []
+    model_texts: List[Tuple[str, str]] = []
     total_files = len(files)
     for file_index, item in enumerate(files, 1):
         path_value = str(item.get("path", "browser-file"))
@@ -630,7 +631,7 @@ def parse_texts(
         model_limits = parse_model_limits(text_value)
         junctions = parse_isolation_junctions(text_value, path_value)
         dependencies = parse_subckt_dependencies(text_value)
-        model_devices: list[Any] = []
+        model_devices: List[Any] = []
         for name, ports, line in parse_model_definitions(text_value):
             device = classify_device(name, "model")
             apply_port_metadata(device, ports)
@@ -708,7 +709,7 @@ def parse_texts(
     }
 
 
-def _rule_from_dict(value: dict[str, Any]) -> Rule:
+def _rule_from_dict(value: Dict[str, Any]) -> Rule:
     value = dict(value)
     source = value.get("source")
     if isinstance(source, dict):
@@ -722,7 +723,7 @@ def _rule_from_dict(value: dict[str, Any]) -> Rule:
     return Rule(**{key: value[key] for key in Rule.__dataclass_fields__ if key in value})
 
 
-def resolve_project_rules(body: dict[str, Any]) -> dict[str, Any]:
+def resolve_project_rules(body: Dict[str, Any]) -> Dict[str, Any]:
     """Share rule selection with browser previews without running Spectre."""
     rules = [_rule_from_dict(value) for value in body.get("rules", [])]
     priority = body.get("source_priority")
@@ -743,7 +744,7 @@ def resolve_project_rules(body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _start_parse_job(body: dict[str, Any]) -> dict[str, str]:
+def _start_parse_job(body: Dict[str, Any]) -> Dict[str, str]:
     mode = str(body.get("mode", "sources"))
     if mode not in {"sources", "texts"}:
         raise ValueError("解析任务 mode 只能是 sources 或 texts。")
@@ -774,7 +775,7 @@ def _start_parse_job(body: dict[str, Any]) -> dict[str, str]:
             "updated_at": now,
         }
 
-    def update_progress(values: dict[str, Any]) -> None:
+    def update_progress(values: Dict[str, Any]) -> None:
         with _PARSE_JOBS_LOCK:
             job = _PARSE_JOBS.get(job_id)
             if job is None:
@@ -822,7 +823,7 @@ def _start_parse_job(body: dict[str, Any]) -> dict[str, str]:
     return {"job_id": job_id, "status": "queued"}
 
 
-def _parse_job_snapshot(job_id: str) -> dict[str, Any] | None:
+def _parse_job_snapshot(job_id: str) -> Optional[Dict[str, Any]]:
     with _PARSE_JOBS_LOCK:
         job = _PARSE_JOBS.get(job_id)
         return dict(job) if job is not None else None
@@ -840,7 +841,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _body(self) -> dict[str, Any]:
+    def _body(self) -> Dict[str, Any]:
         length = int(self.headers.get("Content-Length", "0"))
         return json.loads(self.rfile.read(length) or b"{}")
 

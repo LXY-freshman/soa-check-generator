@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
 import re
 from pathlib import Path
 from typing import Iterable
@@ -43,14 +42,14 @@ def _unquote(value: str) -> str:
     return value
 
 
-def _targets(value: str) -> list[str]:
+def _targets(value: str) -> List[str]:
     value = _unquote(value).strip("[]")
     return [item.strip(" '\"") for item in value.split(",") if item.strip(" '\"")]
 
 
-def parse_spectre_asserts(text: str, source_path: str = "<memory>") -> list[Rule]:
-    rules: list[Rule] = []
-    section: str | None = None
+def parse_spectre_asserts(text: str, source_path: str = "<memory>") -> List[Rule]:
+    rules: List[Rule] = []
+    section: Optional[str] = None
     for line_number, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()
         section_match = _SECTION_RE.match(line)
@@ -89,8 +88,8 @@ def parse_spectre_asserts(text: str, source_path: str = "<memory>") -> list[Rule
     # A single Spectre check can be written as two source lines, one with min
     # and one with max. Keep one editable rule when every other condition is
     # identical, so the export restores a single bounded assertion.
-    merged: list[Rule] = []
-    by_signature: dict[tuple[str, str, str, str | None, str | None, str | None, str | None], Rule] = {}
+    merged: List[Rule] = []
+    by_signature: Dict[Tuple[str, str, str, Optional[str], Optional[str], Optional[str], Optional[str]], Rule] = {}
     for rule in rules:
         signature = (rule.target, rule.target_kind, rule.expr, rule.message, rule.level, rule.duration, rule.section)
         current = by_signature.get(signature)
@@ -110,19 +109,19 @@ def parse_spectre_asserts(text: str, source_path: str = "<memory>") -> list[Rule
     return merged
 
 
-def _clean_ports(value: str) -> list[str]:
+def _clean_ports(value: str) -> List[str]:
     value = value.split("//", 1)[0].strip().strip("()")
     return [item for item in re.split(r"[\s,]+", value) if item]
 
 
-def parse_model_definitions(text: str) -> list[tuple[str, list[str], int]]:
+def parse_model_definitions(text: str) -> List[Tuple[str, List[str], int]]:
     """Parse one-line Spectre subckt/inline-subckt/model declarations.
 
     PDK model files use both ``subckt name (d g s b)`` and
     ``inline subckt name (d g s b nbl psub)``. A model declaration has no
     terminals, but is returned so callers can associate it with a file.
     """
-    definitions: list[tuple[str, list[str], int]] = []
+    definitions: List[Tuple[str, List[str], int]] = []
     for line_number, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith(("//", "*", "$")):
@@ -137,10 +136,10 @@ def parse_model_definitions(text: str) -> list[tuple[str, list[str], int]]:
     return definitions
 
 
-def parse_model_parameters(text: str) -> dict[str, dict[str, str]]:
+def parse_model_parameters(text: str) -> Dict[str, Dict[str, str]]:
     """Extract safety-related model parameters grouped by subckt/model name."""
-    parameters: dict[str, dict[str, str]] = {}
-    current: str | None = None
+    parameters: Dict[str, Dict[str, str]] = {}
+    current: Optional[str] = None
     for raw in text.splitlines():
         line = raw.strip()
         if not line or line.startswith(("//", "*", "$")):
@@ -164,10 +163,10 @@ def parse_model_parameters(text: str) -> dict[str, dict[str, str]]:
     return {name: values for name, values in parameters.items() if values}
 
 
-def parse_model_limits(text: str) -> dict[str, list[dict[str, str]]]:
+def parse_model_limits(text: str) -> Dict[str, List[Dict[str, str]]]:
     """Extract terminal-pair safety parameters from primitive model lines."""
-    limits: dict[str, list[dict[str, str]]] = {}
-    current: str | None = None
+    limits: Dict[str, List[Dict[str, str]]] = {}
+    current: Optional[str] = None
     for line_number, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith(("//", "*", "$")):
@@ -199,11 +198,11 @@ def parse_model_limits(text: str) -> dict[str, list[dict[str, str]]]:
     return {name: values for name, values in limits.items() if values}
 
 
-def parse_subckt_dependencies(text: str) -> dict[str, list[str]]:
+def parse_subckt_dependencies(text: str) -> Dict[str, List[str]]:
     """Find subckt masters instantiated inside other subckts."""
     definitions = {name for name, _ports, _line in parse_model_definitions(text)}
-    dependencies: dict[str, list[str]] = {}
-    current: str | None = None
+    dependencies: Dict[str, List[str]] = {}
+    current: Optional[str] = None
     for raw in text.splitlines():
         line = raw.strip()
         if not line or line.startswith(("//", "*", "$")):
@@ -227,7 +226,7 @@ def parse_subckt_dependencies(text: str) -> dict[str, list[str]]:
     return {name: values for name, values in dependencies.items() if values}
 
 
-def detect_model_soa(text: str) -> dict[str, object]:
+def detect_model_soa(text: str) -> Dict[str, object]:
     """Detect model-internal SOA without treating every bsource as SOA."""
     gsoa_match = re.search(r"(?im)^\s*gsoa\b", text)
     parameter_match = _MODEL_SOA_PARAMETER_RE.search(text)
@@ -248,7 +247,7 @@ def detect_model_soa(text: str) -> dict[str, object]:
     return {"enabled": False, "mechanism": None, "line": None, "note": ""}
 
 
-def parse_isolation_junctions(text: str, source_path: str, diode_definitions: Iterable[str] = ()) -> dict[str, list[dict[str, object]]]:
+def parse_isolation_junctions(text: str, source_path: str, diode_definitions: Iterable[str] = ()) -> Dict[str, List[Dict[str, object]]]:
     """Map explicit diode instances to exposed isolation terminals.
 
     Two-terminal subckt wrappers are followed only when their pins can be
@@ -257,8 +256,8 @@ def parse_isolation_junctions(text: str, source_path: str, diode_definitions: It
     diode_models = {"diode", *(name.lower() for name in diode_definitions)} | {match.group(1).lower() for match in re.finditer(
         r"(?im)^\s*model\s+(\w+)\s+diode\b", text
     )}
-    blocks: dict[str, list[tuple[list[str], list[tuple[str, str, str, int]]]]] = {}
-    current: tuple[list[str], list[tuple[str, str, str, int]]] | None = None
+    blocks: Dict[str, List[Tuple[List[str], List[Tuple[str, str, str, int]]]]] = {}
+    current: Optional[Tuple[List[str], List[Tuple[str, str, str, int]]]] = None
     for line, raw in enumerate(text.splitlines(), 1):
         subckt = _SUBCKT_RE.match(raw)
         if subckt:
@@ -273,7 +272,7 @@ def parse_isolation_junctions(text: str, source_path: str, diode_definitions: It
         instance = re.match(r"^\s*\w+\s*\(\s*([^\s(),]+)[\s,]+([^\s(),]+)\s*\)\s+(\w+)\b", raw)
         if instance:
             current[1].append((*instance.groups(), line))
-    wrappers: dict[str, tuple[int, int]] = {}
+    wrappers: Dict[str, Tuple[int, int]] = {}
     for _pass in range(8):
         changed = False
         for name, variants in blocks.items():
@@ -294,9 +293,9 @@ def parse_isolation_junctions(text: str, source_path: str, diode_definitions: It
                 changed = True
         if not changed:
             break
-    result: dict[str, list[dict[str, object]]] = {}
+    result: Dict[str, List[Dict[str, object]]] = {}
     for name, variants in blocks.items():
-        found: list[dict[str, object]] = []
+        found: List[Dict[str, object]] = []
         for ports, instances in variants:
             normalized = {port.lower(): port for port in ports}
             for first, second, master, line in instances:
@@ -319,7 +318,7 @@ def parse_isolation_junctions(text: str, source_path: str, diode_definitions: It
     return result
 
 
-def bind_selected_isolation_models(devices: Iterable[Device], files: list[tuple[str, str]]) -> None:
+def bind_selected_isolation_models(devices: Iterable[Device], files: List[Tuple[str, str]]) -> None:
     """Resolve diode definitions across explicitly selected model files only."""
     diode_names = {match.group(1).lower() for _path, text in files for match in re.finditer(
         r"(?im)^\s*model\s+(\w+)\s+diode\b", text
@@ -337,14 +336,14 @@ def topology_rule_candidates(
     devices: Iterable[Device],
     existing_rules: Iterable[Rule],
     source_path: str = "<inferred>",
-) -> list[Rule]:
+) -> List[Rule]:
     """Create disabled isolation checks from model ports and explicit ratings."""
     existing_rules = list(existing_rules)
     devices = list(devices)
     for device in devices:
         bind_isolation_rule_metadata(device, existing_rules)
     existing = {(*expression_measurement_key(rule.target, rule.expr), rule.limit_kind) for rule in existing_rules}
-    candidates: list[Rule] = []
+    candidates: List[Rule] = []
     for device in devices:
         connections = isolation_connections(device)
         if not connections:
@@ -400,8 +399,8 @@ def topology_rule_candidates(
     return candidates
 
 
-def parse_device_list(text: str, source_path: str = "<memory>") -> list[Device]:
-    devices: list[Device] = []
+def parse_device_list(text: str, source_path: str = "<memory>") -> List[Device]:
+    devices: List[Device] = []
     category = "unknown"
     for raw in text.splitlines():
         line = raw.strip()
@@ -422,8 +421,8 @@ def parse_device_list(text: str, source_path: str = "<memory>") -> list[Device]:
     return devices
 
 
-def merge_devices(devices: Iterable[Device], rules: Iterable[Rule]) -> list[Device]:
-    by_name: dict[str, Device] = {}
+def merge_devices(devices: Iterable[Device], rules: Iterable[Rule]) -> List[Device]:
+    by_name: Dict[str, Device] = {}
     for incoming in devices:
         current = by_name.get(incoming.name)
         if current is None:
