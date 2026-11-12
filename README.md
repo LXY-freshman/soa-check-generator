@@ -8,6 +8,8 @@ The public repository contains only source code, synthetic fixtures, and generic
 
 Python 3.10 or newer is required.
 
+This main line targets modern Python. The customer-compatible Python 3.6.6 implementation is maintained separately on the public `py36-compat` branch and has its own dependency and validation instructions.
+
 ```bash
 python3 -m soa_generator.service --port 8765
 ```

@@ -16,6 +16,8 @@ node -e "const fs=require('fs');const s=fs.readFileSync('web/index.html','utf8')
 git diff --check
 ```
 
+The `py36-compat` branch runs the same checks under CPython 3.6.6. The modern main line uses its documented current Python target; a main-line check does not replace compatibility-branch validation.
+
 Project files use `soa-project/v1`. Process differences belong in a private `soa-adapter/v1` JSON file and should be validated with `/api/validate_adapter` before use.
 
 ## Privacy checks

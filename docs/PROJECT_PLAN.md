@@ -26,6 +26,7 @@ Build a local browser tool that lets a user select readable model and documentat
 
 ## Planned
 
+- Python 3.6.6 compatibility branch for the customer Linux environment: syntax audit, runtime compatibility helpers, pinned offline dependencies, independent validation, and manual backport workflow.
 - CDF/OA terminal order and parameter-table parsing.
 - More complete applicability metadata for physical matrix entries.
 - Browser automation coverage for compound-device export flows.
