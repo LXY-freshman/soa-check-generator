@@ -1,0 +1,25 @@
+{
+  "schema": "soa-adapter/v1",
+  "id": "example-adapter",
+  "version": "0.1",
+  "description": "Synthetic adapter demonstrating generic naming and topology metadata",
+  "device_rules": [
+    {
+      "pattern": "^demo_ldmos_",
+      "category": "LDMOS",
+      "family": "ldmos",
+      "scope": "active",
+      "topology": ["isolated"]
+    },
+    {
+      "pattern": "^demo_isolated_",
+      "isolation_confidence": "inferred",
+      "topology": ["isolated"],
+      "isolation_type": "junction",
+      "port_roles": {
+        "deep_well": "isolation_well",
+        "substrate": "bulk_substrate"
+      }
+    }
+  ]
+}

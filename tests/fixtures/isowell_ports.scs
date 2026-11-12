@@ -1,0 +1,7 @@
+simulator lang=spectre
+inline subckt demo_mos_mid_isowell_30v_demo (D G S B ISOWELL PSUB)
+ends demo_mos_mid_isowell_30v_demo
+inner_bv assert sub=demo_mos_mid_isowell_30v_demo expr="V(ISOWELL,B)" max=12 level=warning
+
+inline subckt demo_mos_mid_isowell_demo (d g s b isowell psub)
+ends demo_mos_mid_isowell_demo
