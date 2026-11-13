@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Iterable
 
-from .classify import apply_device_metadata, apply_port_metadata, classify_device, isolation_voltage
+from .classify import apply_device_metadata, apply_port_metadata, classify_device, isolation_voltage, mos_polarity
 from .models import Device, Rule, SourceEvidence
 from .resolution import expression_measurement_key
 from .topology import ISOLATION_PORTS, bind_isolation_rule_metadata, isolation_connections
@@ -33,6 +33,16 @@ _MODEL_LIMIT_RE = re.compile(
 )
 _INSTANCE_RE = re.compile(
     r"^\s*(?P<instance>[A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*\)\s+(?P<master>[A-Za-z_][A-Za-z0-9_]*)",
+    re.I,
+)
+_MOS_INSTANCE_RE = re.compile(
+    r"^\s*(?P<instance>m[A-Za-z0-9_]*)\s*\(\s*(?P<nodes>[^)]*)\)\s+"
+    r"(?P<model>[A-Za-z_][A-Za-z0-9_$]*)\s*(?P<params>.*)$",
+    re.I,
+)
+_GEOMETRY_PARAMETER_RE = re.compile(
+    r"\b(?P<key>w|l|nf|m|ad|as|pd|ps)\s*=\s*"
+    r"(?P<value>'[^']*'|\"[^\"]*\"|[^\s]+)",
     re.I,
 )
 
@@ -162,6 +172,61 @@ def parse_model_parameters(text: str) -> dict[str, dict[str, str]]:
             value = match.group("value").strip("'\"")
             parameters[current][match.group("key").lower()] = value
     return {name: values for name, values in parameters.items() if values}
+
+
+def parse_mos_geometry(text: str) -> dict[str, list[dict[str, object]]]:
+    """Extract model-visible MOS instance geometry from selected Spectre text.
+
+    Width, finger count, and multiplier are kept as source expressions. They
+    may be symbolic parameters, so the generator must not evaluate them or
+    silently assume that ``w`` already means total width.
+    """
+    geometry: dict[str, list[dict[str, object]]] = {}
+    current: str | None = None
+    last_record: dict[str, object] | None = None
+    for line_number, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith(("//", "*", "$")):
+            continue
+        subckt = _SUBCKT_RE.match(raw)
+        if subckt:
+            current = subckt.group("name")
+            geometry.setdefault(current, [])
+            last_record = None
+            continue
+        if re.match(r"^\s*(?:ends|\.ends|end\s+subckt)\b", raw, re.I):
+            current = None
+            last_record = None
+            continue
+        if current is None:
+            continue
+        if line.startswith("+") and last_record is not None:
+            continuation = line[1:].strip()
+            params = str(last_record.get("raw_parameters", ""))
+            last_record["raw_parameters"] = f"{params} {continuation}".strip()
+            for match in _GEOMETRY_PARAMETER_RE.finditer(continuation):
+                last_record[match.group("key").lower()] = match.group("value").strip("'\"")
+            continue
+        match = _MOS_INSTANCE_RE.match(raw)
+        if not match:
+            last_record = None
+            continue
+        nodes = _clean_ports(match.group("nodes"))
+        if len(nodes) < 4:
+            last_record = None
+            continue
+        record: dict[str, object] = {
+            "instance": match.group("instance"),
+            "model": match.group("model"),
+            "ports": nodes,
+            "line": line_number,
+            "raw_parameters": match.group("params").strip(),
+        }
+        for parameter in _GEOMETRY_PARAMETER_RE.finditer(match.group("params")):
+            record[parameter.group("key").lower()] = parameter.group("value").strip("'\"")
+        geometry.setdefault(current, []).append(record)
+        last_record = record
+    return {name: items for name, items in geometry.items() if items}
 
 
 def parse_model_limits(text: str) -> dict[str, list[dict[str, str]]]:
@@ -338,12 +403,18 @@ def topology_rule_candidates(
     existing_rules: Iterable[Rule],
     source_path: str = "<inferred>",
 ) -> list[Rule]:
-    """Create disabled isolation checks from model ports and explicit ratings."""
+    """Create disabled topology checks from model ports and explicit ratings."""
     existing_rules = list(existing_rules)
     devices = list(devices)
     for device in devices:
         bind_isolation_rule_metadata(device, existing_rules)
     existing = {(*expression_measurement_key(rule.target, rule.expr), rule.limit_kind) for rule in existing_rules}
+    existing_body = {
+        (rule.target.lower(), "forward_voltage" if rule.measurement in {"", "unknown"} else rule.measurement,
+         frozenset(port.lower() for port in rule.terminal_pair))
+        for rule in existing_rules
+        if rule.limit_kind == "body_diode_forward"
+    }
     candidates: list[Rule] = []
     for device in devices:
         connections = isolation_connections(device)
@@ -397,6 +468,73 @@ def topology_rule_candidates(
             rule.original = rule.to_dict()
             candidates.append(rule)
             existing.add(key)
+    for device in devices:
+        if device.family not in {"mos", "ldmos", "demos"}:
+            continue
+        ports = {port.lower(): port for port in device.ports}
+        drain = ports.get("d") or ports.get("drain")
+        source = ports.get("s") or ports.get("source") or ports.get("bs")
+        body = ports.get("b") or ports.get("body")
+        if not drain or not source:
+            continue
+        junctions: list[tuple[str, str, str]] = []
+        if body and body.lower() != source.lower():
+            junctions.extend([("source", source, body), ("drain", drain, body)])
+        elif device.family in {"ldmos", "demos"}:
+            # These families commonly expose BS as the body-tied source. The
+            # source-body entry is tautological; retain the drain-body path.
+            junctions.append(("drain", drain, source))
+        polarity = mos_polarity(device)
+        for junction_name, junction, body_node in junctions:
+            if polarity == "pmos":
+                left, right = junction, body_node
+            else:
+                left, right = body_node, junction
+            for measurement in ("forward_voltage", "forward_current"):
+                pair_key = (device.name.lower(), measurement, frozenset((left.lower(), right.lower())))
+                if pair_key in existing_body:
+                    continue
+                expr = f"v({left},{right})" if measurement == "forward_voltage" else ""
+                measurement_label = "正向电压" if measurement == "forward_voltage" else "正向电流"
+                reason = (
+                    f"{junction_name}体结端口 {junction}/{body_node} 来自模型端口拓扑；"
+                    f"{polarity if polarity != 'unknown' else 'NMOS/PMOS 极性待确认'} 正向方向为 {left}/{right}；"
+                    f"未提供体二极管{measurement_label}限值。"
+                    if measurement == "forward_voltage"
+                    else f"{junction_name}体结端口 {junction}/{body_node} 来自模型端口拓扑；"
+                    "MOS 紧凑模型通常不能从总端子电流分离该单一结电流，需显式模型/适配器表达式。"
+                )
+                model_source = next((item.get("path") for item in device.model_sources if item.get("path")), None)
+                rule = Rule(
+                    rule_id=f"inferred:body_diode:{device.name}:{junction_name}:{measurement}",
+                    name=f"candidate_{device.name}_body_diode_{junction_name}_{'voltage' if measurement == 'forward_voltage' else 'current'}",
+                    target=device.name,
+                    target_kind="sub",
+                    expr=expr,
+                    maximum=None,
+                    minimum=None,
+                    message=f"SOA Warning - {device.name} {junction_name}-body diode {measurement_label} candidate",
+                    level="warning",
+                    duration="t_trans_hv",
+                    section="soa_generated",
+                    limit_kind="body_diode_forward",
+                    measurement=measurement,
+                    terminal_pair=[left, right],
+                    device_family=device.family,
+                    confidence="missing",
+                    enabled=False,
+                    source=SourceEvidence(
+                        path=str(model_source or source_path),
+                        mechanism="inference",
+                        note=reason,
+                    ),
+                    notes=[reason, "端口拓扑候选默认关闭；请填写工艺限值和表达式后再确认启用。"],
+                    status="missing",
+                    route="topology",
+                )
+                rule.original = rule.to_dict()
+                candidates.append(rule)
+                existing_body.add(pair_key)
     return candidates
 
 
@@ -441,6 +579,9 @@ def merge_devices(devices: Iterable[Device], rules: Iterable[Rule]) -> list[Devi
         if incoming.port_confidence == "confirmed":
             current.port_confidence = "confirmed"
         current.model_parameters.update(incoming.model_parameters)
+        current.geometry_candidates.extend(
+            item for item in incoming.geometry_candidates if item not in current.geometry_candidates
+        )
         current.model_limits.extend(item for item in incoming.model_limits if item not in current.model_limits)
         current.model_sources.extend(item for item in incoming.model_sources if item not in current.model_sources)
         current.isolation_junctions.extend(item for item in incoming.isolation_junctions if item not in current.isolation_junctions)

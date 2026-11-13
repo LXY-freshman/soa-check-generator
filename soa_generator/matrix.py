@@ -21,6 +21,7 @@ def _pair_item(
     left_names: tuple[str, ...],
     right_names: tuple[str, ...],
     reason: str,
+    measurement: str = "unknown",
 ) -> dict[str, object]:
     left = _port(device, *left_names)
     right = _port(device, *right_names)
@@ -30,6 +31,7 @@ def _pair_item(
     applicable = bool(left and right) if known_ports else True
     return {
         "limit_kind": kind,
+        "measurement": measurement,
         "pair": [left or fallback_left, right or fallback_right],
         "applicable": applicable,
         "reason": reason if applicable else f"模型端口明确缺少 {fallback_left}/{fallback_right}",
@@ -37,11 +39,18 @@ def _pair_item(
     }
 
 
-def _metric_item(device: Device, kind: str, port_names: tuple[str, ...], reason: str) -> dict[str, object]:
+def _metric_item(
+    device: Device,
+    kind: str,
+    port_names: tuple[str, ...],
+    reason: str,
+    measurement: str = "unknown",
+) -> dict[str, object]:
     port = _port(device, *port_names)
     applicable = bool(port) if device.ports else True
     return {
         "limit_kind": kind,
+        "measurement": measurement,
         "pair": [port or port_names[0]],
         "applicable": applicable,
         "reason": reason if applicable else f"模型端口明确缺少 {port_names[0]}",
@@ -88,12 +97,17 @@ def _mos_definitions(device: Device) -> list[dict[str, object]]:
             _pair_item(device, "Vbs", body, source, "体源结耐压"),
             _pair_item(device, "Vbd", drain, body, "漏体结耐压"),
             _pair_item(device, "Vgb", ("g", "gate"), body, "栅体耐压"),
-            _pair_item(device, "body_diode_forward", source, body, "源体寄生二极管正向导通"),
-            _pair_item(device, "body_diode_forward", drain, body, "漏体寄生二极管正向导通"),
+            _pair_item(device, "body_diode_forward", source, body, "源体寄生二极管正向电压", "forward_voltage"),
+            _pair_item(device, "body_diode_forward", source, body, "源体寄生二极管正向电流", "forward_current"),
+            _pair_item(device, "body_diode_forward", drain, body, "漏体寄生二极管正向电压", "forward_voltage"),
+            _pair_item(device, "body_diode_forward", drain, body, "漏体寄生二极管正向电流", "forward_current"),
         ])
     elif device.family in {"ldmos", "demos"}:
-        items.append(_pair_item(device, "body_diode_forward", drain, source, "LDMOS/DEMOS 体二极管正向导通"))
-    items.append(_metric_item(device, "current_density", drain, "沟道/漂移区电流密度"))
+        items.extend([
+            _pair_item(device, "body_diode_forward", drain, source, "LDMOS/DEMOS 体二极管正向电压", "forward_voltage"),
+            _pair_item(device, "body_diode_forward", drain, source, "LDMOS/DEMOS 体二极管正向电流", "forward_current"),
+        ])
+    items.append(_metric_item(device, "current_density", drain, "单位栅宽漏极电流", "unit_width_current"))
     return items
 
 
@@ -153,11 +167,22 @@ def _matches_for_definition(
     rules: list[Rule],
 ) -> list[Rule]:
     kind = str(definition["limit_kind"])
+    measurement = str(definition.get("measurement", "unknown"))
     raw_pair = definition["pair"]
     pair = tuple(item.lower() for item in raw_pair) if isinstance(raw_pair, list) else ()
     matches = list(indexed.get((kind, pair), []))
     if len(pair) == 2:
         matches.extend(indexed.get((kind, (pair[1], pair[0])), []))
+    if measurement and matches:
+        exact = [rule for rule in matches if getattr(rule, "measurement", "unknown") == measurement]
+        if exact:
+            matches = exact
+        else:
+            # Legacy/native rules have no measurement metadata. Treat a bare
+            # body-diode voltage or current-density rule as the default
+            # measurement for that matrix entry without merging dimensions.
+            default_measurement = "forward_voltage" if kind == "body_diode_forward" else "unit_width_current" if kind == "current_density" else "unknown"
+            matches = [rule for rule in matches if getattr(rule, "measurement", "unknown") == default_measurement]
     if not matches and kind in {"current_density", "temperature", "power_density"}:
         matches = [rule for rule in rules if rule.target.lower() == device.name.lower() and rule.limit_kind == kind]
     if not matches and kind in {"terminal_voltage", "forward_voltage", "reverse_voltage"}:
@@ -208,9 +233,10 @@ def build_check_matrix(
             chosen.effective("minimum") if chosen else None,
         )
         matrix.append({
-            "matrix_id": f"{device.name}:{kind}:{index}",
+            "matrix_id": f"{device.name}:{kind}:{definition.get('measurement', 'unknown')}:{index}",
             "name": kind,
             "limit_kind": kind,
+            "measurement": str(definition.get("measurement", "unknown")),
             "terminal_pair": list(raw_pair) if isinstance(raw_pair, list) else [],
             "applicable": bool(definition.get("applicable", True)),
             "status": status,

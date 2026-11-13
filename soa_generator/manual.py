@@ -195,6 +195,7 @@ def _make_rule(
         section="soa_generated",
         line=line_number,
         limit_kind=kind,
+        measurement="unit_width_current" if kind == "current_density" else "forward_voltage" if kind == "body_diode_forward" else "unknown",
         terminal_pair=pair,
         device_family=device.family if device else "unknown",
         confidence="documented",
