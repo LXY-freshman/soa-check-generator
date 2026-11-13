@@ -488,17 +488,20 @@ def topology_rule_candidates(
         for junction_name, junction, body_node in junctions:
             if polarity == "pmos":
                 left, right = junction, body_node
-            else:
+            elif polarity == "nmos":
                 left, right = body_node, junction
+            else:
+                left, right = junction, body_node
             for measurement in ("forward_voltage", "forward_current"):
                 pair_key = (device.name.lower(), measurement, frozenset((left.lower(), right.lower())))
                 if pair_key in existing_body:
                     continue
-                expr = f"v({left},{right})" if measurement == "forward_voltage" else ""
+                expr = f"v({left},{right})" if measurement == "forward_voltage" and polarity != "unknown" else ""
                 measurement_label = "正向电压" if measurement == "forward_voltage" else "正向电流"
+                direction_note = f"{polarity} 正向方向为 {left}/{right}" if polarity != "unknown" else "NMOS/PMOS 极性和正向方向待确认"
                 reason = (
                     f"{junction_name}体结端口 {junction}/{body_node} 来自模型端口拓扑；"
-                    f"{polarity if polarity != 'unknown' else 'NMOS/PMOS 极性待确认'} 正向方向为 {left}/{right}；"
+                    f"{direction_note}；"
                     f"未提供体二极管{measurement_label}限值。"
                     if measurement == "forward_voltage"
                     else f"{junction_name}体结端口 {junction}/{body_node} 来自模型端口拓扑；"
