@@ -79,6 +79,7 @@ def apply_adapter_config(
                 line=int(item["line"]) if item.get("line") is not None else None,
                 limit_kind=limit_kind,
                 measurement=str(item.get("measurement", "unknown")),
+                measurement_unit=str(item.get("measurement_unit", "")),
                 terminal_pair=[str(value) for value in item.get("terminal_pair", [])] or terminal_pair(expr),
                 device_family=device.family,
                 confidence="documented",
