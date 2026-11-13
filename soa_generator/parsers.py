@@ -522,6 +522,7 @@ def topology_rule_candidates(
                     section="soa_generated",
                     limit_kind="body_diode_forward",
                     measurement=measurement,
+                    measurement_unit="",
                     terminal_pair=[left, right],
                     device_family=device.family,
                     confidence="missing",

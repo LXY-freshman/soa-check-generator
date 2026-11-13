@@ -237,6 +237,7 @@ def build_check_matrix(
             "name": kind,
             "limit_kind": kind,
             "measurement": str(definition.get("measurement", "unknown")),
+            "measurement_unit": chosen.measurement_unit if chosen else ("uA/um" if kind == "current_density" else ""),
             "terminal_pair": list(raw_pair) if isinstance(raw_pair, list) else [],
             "applicable": bool(definition.get("applicable", True)),
             "status": status,

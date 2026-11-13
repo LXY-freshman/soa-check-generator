@@ -78,6 +78,7 @@ class Rule:
     line: int | None = None
     limit_kind: str = "other"
     measurement: str = "unknown"
+    measurement_unit: str = ""
     terminal_pair: list[str] = field(default_factory=list)
     device_family: str = "unknown"
     confidence: Confidence = "confirmed"

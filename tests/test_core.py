@@ -442,6 +442,7 @@ ends demo_mos_mid_ckt
         self.assertEqual(current["maximum"], "0.25")
         self.assertIsNone(current["minimum"])
         self.assertEqual(current["measurement"], "unit_width_current")
+        self.assertEqual(current["measurement_unit"], "uA/um")
         self.assertIn("abs(I(d))/Weff", current["expr"])
 
     def test_mos_geometry_and_body_diode_dimensions_are_explicit_candidates(self) -> None:
@@ -459,7 +460,8 @@ ends demo_pmos
         nmos = next(item for item in payload["devices"] if item["name"] == "demo_nmos")
         pmos = next(item for item in payload["devices"] if item["name"] == "demo_pmos")
         nmos_current = next(rule for rule in payload["rules"] if rule["target"] == "demo_nmos" and rule["limit_kind"] == "current_density")
-        self.assertEqual(nmos_current["maximum"], "10uA/um")
+        self.assertEqual(nmos_current["maximum"], "10")
+        self.assertEqual(nmos_current["measurement_unit"], "uA/um")
         self.assertEqual(nmos_current["status"], "inferred")
         self.assertEqual(nmos_current["measurement"], "unit_width_current")
         self.assertEqual(nmos_current["expr"], "abs(I(d))/((10u)*(2)*(1))")

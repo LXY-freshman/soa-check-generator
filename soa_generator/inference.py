@@ -9,7 +9,8 @@ from .classify import classify_limit
 from .resolution import expression_measurement_key
 
 
-DEFAULT_UNIT_WIDTH_CURRENT = "10uA/um"
+DEFAULT_UNIT_WIDTH_CURRENT = "10"
+DEFAULT_UNIT_WIDTH_CURRENT_LABEL = "10uA/um"
 
 
 @dataclass
@@ -122,6 +123,7 @@ def _candidate(
     route: str = "inference",
     mechanism: str | None = None,
     measurement: str = "unknown",
+    measurement_unit: str = "",
 ) -> Rule:
     value_note = reason
     pair_id = ":".join(terminal_pair) or "unknown"
@@ -139,6 +141,7 @@ def _candidate(
         section="soa_generated",
         limit_kind=limit_kind,
         measurement=measurement,
+        measurement_unit=measurement_unit,
         terminal_pair=terminal_pair,
         device_family=device.family,
         confidence="inferred",
@@ -359,7 +362,7 @@ def model_rule_candidates(
                     candidate_source = source
                 else:
                     reason = (
-                        f"用户参考单位栅宽电流 {DEFAULT_UNIT_WIDTH_CURRENT}；{geometry_note}；"
+                        f"用户参考单位栅宽电流 {DEFAULT_UNIT_WIDTH_CURRENT_LABEL}（Spectre 数值归一化为 max={DEFAULT_UNIT_WIDTH_CURRENT}）；{geometry_note}；"
                         "不是工艺文档已确认值，需确认适用器件、温度和持续时间。"
                     )
                     maximum = DEFAULT_UNIT_WIDTH_CURRENT
@@ -381,6 +384,7 @@ def model_rule_candidates(
                         route=route,
                         mechanism=mechanism,
                         measurement="unit_width_current",
+                        measurement_unit="uA/um",
                     )
                 )
         if device.family not in {"mos", "ldmos", "demos"}:
