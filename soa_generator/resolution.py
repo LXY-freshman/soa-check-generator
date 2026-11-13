@@ -23,6 +23,7 @@ DEFAULT_SOURCE_PRIORITY = [
     "adapter",
     "model_spectre",
     "device_list",
+    "topology",
     "inference",
 ]
 
@@ -176,6 +177,8 @@ def source_route(rule: Rule) -> str:
         return "user_defined"
     if rule.route == "adapter":
         return "adapter"
+    if rule.route == "topology":
+        return "topology"
     mechanism = rule.source.mechanism if rule.source else "unknown"
     if mechanism == "spectre_assert":
         return "spectre_soa"

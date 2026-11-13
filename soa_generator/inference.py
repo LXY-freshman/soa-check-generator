@@ -9,6 +9,10 @@ from .classify import classify_limit
 from .resolution import expression_measurement_key
 
 
+DEFAULT_UNIT_WIDTH_CURRENT = "10"
+DEFAULT_UNIT_WIDTH_CURRENT_LABEL = "10uA/um"
+
+
 @dataclass
 class InferenceResult:
     value: str
@@ -78,6 +82,32 @@ def _numeric_parameter(device: Device, names: tuple[str, ...]) -> tuple[float, s
     return None
 
 
+def _raw_parameter(device: Device, names: tuple[str, ...]) -> tuple[str, str] | None:
+    for name in names:
+        raw = device.model_parameters.get(name)
+        if raw is not None and str(raw).strip():
+            return str(raw).strip(), name
+    return None
+
+
+def _unit_width_expression(device: Device, current_port: str) -> tuple[str, str]:
+    """Build a transparent Id/Weff expression from model-visible geometry.
+
+    Spectre model wrappers often keep ``w`` symbolic and add ``nf``/``m`` on
+    the primitive instance. Keep those expressions intact so users can review
+    the normalization instead of receiving a guessed numeric area.
+    """
+    for item in device.geometry_candidates:
+        width = item.get("w")
+        if width in (None, ""):
+            continue
+        nf = item.get("nf") or "1"
+        multiplier = item.get("m") or "1"
+        width_expr = f"({width})*({nf})*({multiplier})"
+        return f"abs(I({current_port}))/({width_expr})", f"Weff=({width_expr})"
+    return f"abs(I({current_port}))/Weff", "缺少模型实例 w/nf/m，Weff 需用户或适配器补充"
+
+
 def _candidate(
     device: Device,
     *,
@@ -91,6 +121,9 @@ def _candidate(
     terminal_pair: list[str],
     status: str = "inferred",
     route: str = "inference",
+    mechanism: str | None = None,
+    measurement: str = "unknown",
+    measurement_unit: str = "",
 ) -> Rule:
     value_note = reason
     pair_id = ":".join(terminal_pair) or "unknown"
@@ -107,13 +140,15 @@ def _candidate(
         duration="t_trans_hv",
         section="soa_generated",
         limit_kind=limit_kind,
+        measurement=measurement,
+        measurement_unit=measurement_unit,
         terminal_pair=terminal_pair,
         device_family=device.family,
         confidence="inferred",
         enabled=False,
         source=SourceEvidence(
             path=source_path,
-            mechanism="manual_table" if "手册" in reason else "inference",
+            mechanism=mechanism or ("manual_table" if "手册" in reason else "inference"),
             note=value_note,
         ),
         notes=[value_note, "非原生 SOA 候选，默认关闭；请用工艺手册、模型参数或实测数据确认后再启用。"],
@@ -274,7 +309,10 @@ def model_rule_candidates(
     margin: float = 0.10,
 ) -> list[Rule]:
     """Turn Spectre model safety parameters and MOS voltage names into candidates."""
-    existing = {expression_measurement_key(str(rule.effective("target")), str(rule.effective("expr") or "")) for rule in existing_rules}
+    existing = {
+        (expression_measurement_key(str(rule.effective("target")), str(rule.effective("expr") or "")), rule.limit_kind)
+        for rule in existing_rules
+    }
     candidates: list[Rule] = []
     for device in devices:
         source = device.source.path if device.source else source_path
@@ -284,7 +322,8 @@ def model_rule_candidates(
             if value is None or not left or not right:
                 continue
             expr = f"v({left},{right})"
-            if expression_measurement_key(device.name, expr) in existing:
+            kind = _model_limit_kind(left, right)
+            if (expression_measurement_key(device.name, expr), kind) in existing:
                 continue
             key = item.get("key", "model_limit")
             reason = f"Spectre 模型参数 {key}={value:g} 来自 {item.get('primitive', 'primitive')} 的端口 {left}/{right}；候选仍需确认是否为最终 SOA 上限。"
@@ -293,7 +332,7 @@ def model_rule_candidates(
                     device,
                     name=f"candidate_{device.name}_{key}_{left}_{right}",
                     expr=expr,
-                    limit_kind=_model_limit_kind(left, right),
+                    limit_kind=kind,
                     maximum=f"{value:g}",
                     minimum=f"{-value:g}",
                     reason=reason,
@@ -301,29 +340,53 @@ def model_rule_candidates(
                     terminal_pair=[left, right],
                 )
             )
-            existing.add(expression_measurement_key(device.name, expr))
+            existing.add((expression_measurement_key(device.name, expr), kind))
         if device.family in {"mos", "ldmos", "demos", "resistor"}:
             ports = {port.lower(): port for port in device.ports}
             current_port = ports.get("d") or ports.get("n1") or (device.ports[0] if device.ports else None)
-            current_value = _numeric_parameter(device, ("jmax", "current_density"))
-            if current_port and current_value:
-                value, parameter_name = current_value
-                expr = f"I({current_port})"
-                if expression_measurement_key(device.name, expr) not in existing:
-                    candidates.append(
-                        _candidate(
-                            device,
-                            name=f"candidate_{device.name}_current_density_{current_port}",
-                            expr=expr,
-                            limit_kind="current_density",
-                            maximum=f"{value:g}",
-                            minimum=f"{-value:g}",
-                            reason=f"模型参数 {parameter_name}={value:g} 提供电流密度线索；需确认归一化面积和单位。",
-                            source_path=source,
-                            terminal_pair=[current_port],
-                        )
+            model_value = _raw_parameter(device, ("jmax", "current_density"))
+            if current_port and (device.family in {"mos", "ldmos", "demos"} or model_value) and not any(
+                rule.target.lower() == device.name.lower() and rule.limit_kind == "current_density"
+                for rule in existing_rules
+            ):
+                expr, geometry_note = _unit_width_expression(device, current_port)
+                if model_value:
+                    value, parameter_name = model_value
+                    reason = (
+                        f"模型参数 {parameter_name}={value} 被解释为单位栅宽电流候选；"
+                        f"{geometry_note}；仍需确认 PDK 单位和温度条件。"
                     )
-                    existing.add(expression_measurement_key(device.name, expr))
+                    maximum = value
+                    route = "model_spectre"
+                    mechanism = "model_internal"
+                    candidate_source = source
+                else:
+                    reason = (
+                        f"用户参考单位栅宽电流 {DEFAULT_UNIT_WIDTH_CURRENT_LABEL}（Spectre 数值归一化为 max={DEFAULT_UNIT_WIDTH_CURRENT}）；{geometry_note}；"
+                        "不是工艺文档已确认值，需确认适用器件、温度和持续时间。"
+                    )
+                    maximum = DEFAULT_UNIT_WIDTH_CURRENT
+                    route = "inference"
+                    mechanism = "inference"
+                    candidate_source = "用户参考"
+                status = "inferred" if device.geometry_candidates else "missing"
+                candidates.append(
+                    _candidate(
+                        device,
+                        name=f"candidate_{device.name}_current_density_{current_port}",
+                        expr=expr,
+                        limit_kind="current_density",
+                        maximum=maximum,
+                        reason=reason,
+                        source_path=candidate_source,
+                        terminal_pair=[current_port],
+                        status=status,
+                        route=route,
+                        mechanism=mechanism,
+                        measurement="unit_width_current",
+                        measurement_unit="uA/um",
+                    )
+                )
         if device.family not in {"mos", "ldmos", "demos"}:
             continue
         ports = {port.lower(): port for port in device.ports}
@@ -347,7 +410,7 @@ def model_rule_candidates(
             expr = f"v({left},{right})"
             nominal = device.gate_voltage if limit_kind in {"Vgs", "Vgd", "Vgb"} else device.family_voltage
             value = nominal * (1.0 + margin) if nominal is not None else None
-            if expression_measurement_key(device.name, expr) in existing:
+            if (expression_measurement_key(device.name, expr), limit_kind) in existing:
                 continue
             if value is None:
                 reason = f"Spectre 模型未提供 {limit_kind} 数值上限，保留空白检查等待用户填写。"
@@ -373,5 +436,5 @@ def model_rule_candidates(
                     route=route,
                 )
             )
-            existing.add(expression_measurement_key(device.name, expr))
+            existing.add((expression_measurement_key(device.name, expr), limit_kind))
     return candidates
