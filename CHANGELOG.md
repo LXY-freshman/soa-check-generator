@@ -9,6 +9,7 @@
 - Added `soa-project/v1` validation and `soa-adapter/v1` configuration for private process-specific naming and evidence.
 - Added synthetic fixtures and tests for duplicate handling, rule identity, topology, model-internal SOA clues, and export behavior.
 - Added reproducible source build and packaging helpers that exclude private and ignored artifacts.
+- Added MOS source/drain body-diode voltage/current candidates, Spectre MOS geometry extraction, unit-gate-width current candidates, and UI bulk selection with topology provenance.
 
 ## Earlier
 

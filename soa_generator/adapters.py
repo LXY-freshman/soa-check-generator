@@ -78,6 +78,7 @@ def apply_adapter_config(
                 section=str(item.get("section", "soa_generated")),
                 line=int(item["line"]) if item.get("line") is not None else None,
                 limit_kind=limit_kind,
+                measurement=str(item.get("measurement", "unknown")),
                 terminal_pair=[str(value) for value in item.get("terminal_pair", [])] or terminal_pair(expr),
                 device_family=device.family,
                 confidence="documented",

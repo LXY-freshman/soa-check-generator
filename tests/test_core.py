@@ -8,7 +8,7 @@ from soa_generator.coverage import pdk_coverage
 from soa_generator.export import ExportSet, model_soa_export_metadata, project_json, render_spectre, select_rules
 from soa_generator.models import Device, Rule, SourceEvidence
 from soa_generator.manual import parse_manual_rules
-from soa_generator.parsers import detect_model_soa, parse_device_list, parse_model_definitions, parse_model_limits, parse_model_parameters, parse_spectre_asserts, parse_subckt_dependencies, topology_rule_candidates
+from soa_generator.parsers import detect_model_soa, parse_device_list, parse_model_definitions, parse_model_limits, parse_model_parameters, parse_mos_geometry, parse_spectre_asserts, parse_subckt_dependencies, topology_rule_candidates
 from soa_generator.resolution import resolve_rule_groups
 from soa_generator.schema import validate_adapter_config, validate_project_payload
 from soa_generator.service import _spectre_diagnostics, parse_sources, parse_text, parse_texts
@@ -440,7 +440,40 @@ ends demo_mos_mid_ckt
         mos_rules = [rule for rule in payload["rules"] if rule["target"] == "demo_mos_mid_ckt"]
         current = next(rule for rule in mos_rules if rule["limit_kind"] == "current_density")
         self.assertEqual(current["maximum"], "0.25")
-        self.assertEqual(current["minimum"], "-0.25")
+        self.assertIsNone(current["minimum"])
+        self.assertEqual(current["measurement"], "unit_width_current")
+        self.assertIn("abs(I(d))/Weff", current["expr"])
+
+    def test_mos_geometry_and_body_diode_dimensions_are_explicit_candidates(self) -> None:
+        text = """simulator lang=spectre
+subckt demo_nmos (d g s b)
+M0 (d g s b) nmos w=10u l=0.18u nf=2 m=1
+ends demo_nmos
+subckt demo_pmos (d g s b)
+M0 (d g s b) pmos w=4u nf=3
+ends demo_pmos
+"""
+        geometry = parse_mos_geometry(text)
+        self.assertEqual(geometry["demo_nmos"][0]["w"], "10u")
+        payload = parse_text(text, "mos_geometry.scs")
+        nmos = next(item for item in payload["devices"] if item["name"] == "demo_nmos")
+        pmos = next(item for item in payload["devices"] if item["name"] == "demo_pmos")
+        nmos_current = next(rule for rule in payload["rules"] if rule["target"] == "demo_nmos" and rule["limit_kind"] == "current_density")
+        self.assertEqual(nmos_current["maximum"], "10uA/um")
+        self.assertEqual(nmos_current["status"], "inferred")
+        self.assertEqual(nmos_current["measurement"], "unit_width_current")
+        self.assertEqual(nmos_current["expr"], "abs(I(d))/((10u)*(2)*(1))")
+        body_rules = [rule for rule in payload["rules"] if rule["target"] == "demo_nmos" and rule["limit_kind"] == "body_diode_forward"]
+        self.assertEqual({rule["measurement"] for rule in body_rules}, {"forward_voltage", "forward_current"})
+        self.assertEqual(len(body_rules), 4)
+        self.assertTrue(all(rule["route"] == "topology" and not rule["enabled"] for rule in body_rules))
+        self.assertEqual({rule["expr"] for rule in body_rules if rule["measurement"] == "forward_voltage"}, {"v(b,s)", "v(b,d)"})
+        pmos_body = [rule for rule in payload["rules"] if rule["target"] == "demo_pmos" and rule["measurement"] == "forward_voltage"]
+        self.assertEqual({rule["expr"] for rule in pmos_body}, {"v(s,b)", "v(d,b)"})
+        matrix_dimensions = {(item["limit_kind"], item["measurement"]) for item in nmos["check_matrix"]}
+        self.assertIn(("body_diode_forward", "forward_voltage"), matrix_dimensions)
+        self.assertIn(("body_diode_forward", "forward_current"), matrix_dimensions)
+        self.assertIn(("current_density", "unit_width_current"), matrix_dimensions)
 
     def test_diode_forward_candidate_survives_source_reverse_rule(self) -> None:
         text = """simulator lang=spectre
@@ -454,6 +487,23 @@ ends dio5
         diode_rules = [rule for rule in payload["rules"] if rule["target"] == "dio5"]
         self.assertTrue(any(rule["limit_kind"] == "reverse_voltage" and rule["confidence"] == "confirmed" for rule in diode_rules))
         self.assertTrue(any(rule["limit_kind"] == "forward_voltage" and rule["maximum"] == "1.2" for rule in diode_rules))
+
+    def test_body_diode_assert_is_not_duplicated_by_topology_candidate(self) -> None:
+        text = """simulator lang=spectre
+subckt demo_nmos (d g s b)
+ends demo_nmos
+body_source assert sub=demo_nmos expr="v(b,s)" max=0.8 message="body diode Vf"
+"""
+        payload = parse_text(text, "body_diode_native.scs")
+        body_voltage = [
+            rule for rule in payload["rules"]
+            if rule["target"] == "demo_nmos" and rule["limit_kind"] == "body_diode_forward" and rule["measurement"] == "forward_voltage"
+        ]
+        self.assertEqual(len(body_voltage), 2)
+        source_voltage = [rule for rule in body_voltage if rule["expr"] == "v(b,s)"]
+        self.assertEqual(len(source_voltage), 1)
+        self.assertEqual(source_voltage[0]["confidence"], "confirmed")
+        self.assertEqual(source_voltage[0]["maximum"], "0.8")
 
     def test_spectre_model_limits_generate_terminal_candidates(self) -> None:
         text = """simulator lang=spectre
