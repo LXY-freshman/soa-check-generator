@@ -8,6 +8,7 @@
 
 ## Next
 
+- Added MOS body-diode voltage/current candidates, model geometry parsing, and unit-gate-width current candidates; Python 3.6 compatibility code keeps these candidates disabled until confirmation.
 - Added structured parsing for model definitions, ports, source provenance, and compound device relationships.
 - Added source-priority resolution, rule overrides, missing-value states, and explicit confirmation before inferred checks can be exported.
 - Added topology-aware candidates for isolation structures, substrate connections, parasitic paths, and non-MOS device families.
