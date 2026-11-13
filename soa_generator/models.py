@@ -35,6 +35,7 @@ class Device:
     port_roles: Dict[str, str] = field(default_factory=dict)
     port_confidence: str = "missing"
     model_parameters: Dict[str, str] = field(default_factory=dict)
+    geometry_candidates: List[Dict[str, Any]] = field(default_factory=list)
     model_limits: List[Dict[str, str]] = field(default_factory=list)
     parameter_confidence: str = "missing"
     aliases: List[str] = field(default_factory=list)
@@ -67,6 +68,8 @@ class Rule:
     section: Optional[str] = None
     line: Optional[int] = None
     limit_kind: str = "other"
+    measurement: str = "unknown"
+    measurement_unit: str = ""
     terminal_pair: List[str] = field(default_factory=list)
     device_family: str = "unknown"
     confidence: Confidence = "confirmed"

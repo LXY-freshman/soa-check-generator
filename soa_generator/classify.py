@@ -38,6 +38,16 @@ def classify_family(name: str, category: str = "") -> str:
     return "unknown"
 
 
+def mos_polarity(device: Device) -> str:
+    """Infer MOS polarity from explicit family naming when available."""
+    value = f"{device.name} {device.category}".lower()
+    if any(token in value for token in ("pmos", "pch", "pld", "pde")) or value.startswith("p"):
+        return "pmos"
+    if any(token in value for token in ("nmos", "nch", "nld", "nde")) or value.startswith("n"):
+        return "nmos"
+    return "unknown"
+
+
 def classify_scope(name: str, category: str = "") -> str:
     value = f"{name} {category}".lower()
     if any(token in value for token in ("pocket", "iso_ring", "sealring", "parasitic", "hidden")):
@@ -196,8 +206,13 @@ def classify_device(name: str, category: str = "") -> Device:
 def classify_limit(expr: str, message: Optional[str] = None) -> str:
     text = f"{expr} {message or ''}".lower()
     match = _VOLTAGE_PAIR.search(expr or "")
+    body_diode_hint = any(token in text for token in ("body diode", "body_diode", "体二极管"))
     if match:
         pair = frozenset((match.group(1).lower(), match.group(2).lower()))
+        if body_diode_hint and pair in {
+            frozenset(("b", "s")), frozenset(("b", "bs")), frozenset(("d", "b")),
+        }:
+            return "body_diode_forward"
         if pair & {"iso", "isub", "isowell", "nbl", "pepi", "hvnwell", "hvbn", "dpw", "ddnw", "dnw", "dnwell", "pwell", "pw"}:
             return "isolation_bv"
         voltage_kinds = {
@@ -233,5 +248,9 @@ def terminal_pair(expr: str) -> List[str]:
 def apply_device_metadata(rule: Rule) -> Rule:
     rule.device_family = classify_family(rule.target)
     rule.limit_kind = classify_limit(rule.expr, rule.message)
+    if rule.limit_kind == "body_diode_forward":
+        rule.measurement = "forward_current" if re.search(r"\bi\s*\(", rule.expr or "", re.I) or "current" in f"{rule.expr} {rule.message or ''}".lower() else "forward_voltage"
+    elif rule.limit_kind == "current_density":
+        rule.measurement = "unit_width_current"
     rule.terminal_pair = terminal_pair(rule.expr)
     return rule

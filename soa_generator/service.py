@@ -35,6 +35,7 @@ from .parsers import (
     parse_device_list,
     parse_model_definitions,
     parse_model_parameters,
+    parse_mos_geometry,
     parse_model_limits,
     parse_subckt_dependencies,
     parse_isolation_junctions,
@@ -324,6 +325,7 @@ def parse_source(source: Dict[str, Any], adapter_config: Optional[Dict[str, Any]
         devices = []
     definitions = parse_model_definitions(text)
     model_parameters = parse_model_parameters(text)
+    geometry = parse_mos_geometry(text)
     model_limits = parse_model_limits(text)
     junctions = parse_isolation_junctions(text, path)
     dependencies = parse_subckt_dependencies(text)
@@ -331,6 +333,7 @@ def parse_source(source: Dict[str, Any], adapter_config: Optional[Dict[str, Any]
         device = classify_device(name, "model")
         apply_port_metadata(device, ports)
         device.model_parameters = model_parameters.get(name, {})
+        device.geometry_candidates = geometry.get(name, [])
         device.model_limits = model_limits.get(name, [])
         device.isolation_junctions = junctions.get(name, [])
         device.associated_devices = dependencies.get(name, [])
@@ -372,6 +375,7 @@ def parse_text(text: str, path: str, adapter_config: Optional[Dict[str, Any]] = 
         devices = []
     source_rule_count = len(rules)
     model_parameters = parse_model_parameters(text)
+    geometry = parse_mos_geometry(text)
     model_limits = parse_model_limits(text)
     junctions = parse_isolation_junctions(text, path)
     dependencies = parse_subckt_dependencies(text)
@@ -379,6 +383,7 @@ def parse_text(text: str, path: str, adapter_config: Optional[Dict[str, Any]] = 
         device = classify_device(name, "model")
         apply_port_metadata(device, ports)
         device.model_parameters = model_parameters.get(name, {})
+        device.geometry_candidates = geometry.get(name, [])
         device.model_limits = model_limits.get(name, [])
         device.isolation_junctions = junctions.get(name, [])
         device.associated_devices = dependencies.get(name, [])
@@ -466,6 +471,7 @@ def parse_sources(
                 rules.append(rule)
         definitions = parse_model_definitions(text)
         model_parameters = parse_model_parameters(text)
+        geometry = parse_mos_geometry(text)
         model_limits = parse_model_limits(text)
         junctions = parse_isolation_junctions(text, path)
         dependencies = parse_subckt_dependencies(text)
@@ -483,6 +489,7 @@ def parse_sources(
             device = classify_device(name, "model")
             apply_port_metadata(device, ports)
             device.model_parameters = model_parameters.get(name, {})
+            device.geometry_candidates = geometry.get(name, [])
             device.model_limits = model_limits.get(name, [])
             device.isolation_junctions = junctions.get(name, [])
             device.associated_devices = dependencies.get(name, [])
@@ -628,6 +635,7 @@ def parse_texts(
             "model_soa_note": model_soa["note"],
         })
         model_parameters = parse_model_parameters(text_value)
+        geometry = parse_mos_geometry(text_value)
         model_limits = parse_model_limits(text_value)
         junctions = parse_isolation_junctions(text_value, path_value)
         dependencies = parse_subckt_dependencies(text_value)
@@ -636,6 +644,7 @@ def parse_texts(
             device = classify_device(name, "model")
             apply_port_metadata(device, ports)
             device.model_parameters = model_parameters.get(name, {})
+            device.geometry_candidates = geometry.get(name, [])
             device.model_limits = model_limits.get(name, [])
             device.isolation_junctions = junctions.get(name, [])
             device.associated_devices = dependencies.get(name, [])
