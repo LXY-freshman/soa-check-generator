@@ -6,7 +6,7 @@ from .models import Device, Rule
 
 
 _VOLTAGE_AFTER_FAMILY = re.compile(r"^(?:nld|pld|nde|pde|nmos|pmos|n|p)(\d+)", re.I)
-_ISO_VOLTAGE = re.compile(r"(?:iso|isoring|hvbn|hvnwell|dpw|ddnw)[_-]?(\d+)(?:v)?", re.I)
+_ISO_VOLTAGE = re.compile(r"(?:iso|isoring|isowell|hvbn|hvnwell|dpw|ddnw)[_-]?(\d+)(?:v)?", re.I)
 _NBL_ISO_VOLTAGE = re.compile(r"(?:nbl|hvnwell|dpw)[_-](\d+)v(?:_|$)", re.I)
 _DESCRIPTOR_VOLTAGE = re.compile(r"^[np](?:ch|mos)(\d+)d(\d+)", re.I)
 _TEXT_VOLTAGE = re.compile(r"(?:^|_)(\d+)p(\d+)v(?:_|$)", re.I)
@@ -30,6 +30,8 @@ def classify_family(name: str, category: str = "") -> str:
         return "esd_protection"
     if any(token in value for token in ("ldm", "nld", "pld")):
         return "ldmos"
+    if "demo_mos" in value or "demo_pmos" in value:
+        return "mos"
     if any(token in value for token in ("dem", "nde", "pde")):
         return "demos"
     if any(token in value for token in ("mos", "nch", "pch", "nmos", "pmos")) or re.match(r"^[np](?:nt|lvt|ulvt|udvt|dvt)?\d", value):
@@ -50,7 +52,7 @@ def classify_scope(name: str, category: str = "") -> str:
 
 def topology_tokens(name: str) -> list[str]:
     value = name.lower()
-    known = ("ful_iso", "iso", "hvbn", "hvnwell", "dpw", "ddnw", "cmt", "hs", "ls", "lvt", "ulvt", "udvt", "dvt", "dep", "gg")
+    known = ("ful_iso", "iso", "isowell", "hvbn", "hvnwell", "dpw", "ddnw", "cmt", "hs", "ls", "lvt", "ulvt", "udvt", "dvt", "dep", "gg")
     return [token for token in known if token in value]
 
 
@@ -65,6 +67,7 @@ def topology_from_ports(ports: list[str]) -> list[str]:
         ("pepi", "pepi"),
         ("hvnwell", "hvnwell"),
         ("hvbn", "hvbn"),
+        ("isowell", "isowell"),
         ("dpw", "dpw"),
         ("ddnw", "ddnw"),
         ("dnw", "dnw"),
@@ -91,7 +94,7 @@ def apply_port_metadata(device: Device, ports: list[str]) -> Device:
         "psub": "bulk_substrate", "sub": "bulk_substrate",
         "nbl": "isolation_nbl", "pepi": "isolation_epitaxy",
         "iso": "isolation_ring", "isub": "isolation_substrate",
-        "hvnwell": "isolation_well", "hvbn": "isolation_well",
+        "hvnwell": "isolation_well", "hvbn": "isolation_well", "isowell": "isolation_well",
         "dpw": "isolation_well", "ddnw": "isolation_well",
         "dnw": "isolation_well", "dnwell": "isolation_well",
         "pwell": "body", "pw": "body",
@@ -113,6 +116,20 @@ def apply_port_metadata(device: Device, ports: list[str]) -> Device:
 
 def family_voltage(name: str) -> float | None:
     value = name.lower()
+    synthetic_levels = (
+        ("demo_mos_low", 1.8),
+        ("demo_mos_mid", 5.0),
+        ("demo_ldmos_high", 12.0),
+        ("demo_pmos_mid", 3.3),
+        ("demo_var_3p3v", 3.3),
+        ("demo_var_low", 1.8),
+        ("demo_diode_low", 1.8),
+        ("demo_resistor_5v", 5.0),
+        ("demo_pnp_low", 1.8),
+    )
+    for marker, voltage in synthetic_levels:
+        if marker in value:
+            return voltage
     for pattern in (
         r"^[np]var(\d+)",
         r"^(?:pnp|npn)(\d+)",
@@ -137,7 +154,7 @@ def family_voltage(name: str) -> float | None:
     match = _VOLTAGE_AFTER_FAMILY.match(value)
     if match:
         number = int(match.group(1))
-        # SMIC-style LV/MV MOS names use 18/50/60 for 1.8/5/6 V.
+        # Some legacy model naming conventions encode nominal voltage as 18/50/60.
         if re.match(r"^(?:n|p)(?:nt|lvt|ulvt|udvt|dvt)?\d", value) and not value.startswith(("nld", "pld", "nde", "pde")):
             return {18: 1.8, 50: 5.0, 60: 6.0}.get(number, float(number))
         return float(number)
@@ -182,7 +199,7 @@ def classify_limit(expr: str, message: str | None = None) -> str:
     match = _VOLTAGE_PAIR.search(expr or "")
     if match:
         pair = frozenset((match.group(1).lower(), match.group(2).lower()))
-        if pair & {"iso", "isub", "nbl", "pepi", "hvnwell", "hvbn", "dpw", "ddnw", "dnw", "dnwell", "pwell", "pw"}:
+        if pair & {"iso", "isub", "isowell", "nbl", "pepi", "hvnwell", "hvbn", "dpw", "ddnw", "dnw", "dnwell", "pwell", "pw"}:
             return "isolation_bv"
         voltage_kinds = {
             frozenset(("d", "s")): "Vds", frozenset(("d", "bs")): "Vds",

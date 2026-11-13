@@ -1,31 +1,56 @@
-# SOA 检查语句生成器
+# SOA Check Generator
 
-当前版本已包含第一条可运行链路：扫描工艺路径、发现器件/SOA 源文件、解析 Spectre `assert`、选择规则并导出派生 `.scs` 和 `soa-project.json`。
+SOA Check Generator is a local browser tool for importing user-selected semiconductor model files, reviewing safe-operating-area (SOA) evidence, editing derived checks, and exporting Spectre or JSON results.
 
-## 启动本地浏览器工具
+The public repository contains only source code, synthetic fixtures, and generic adapter examples. No process kit, model library, design manual, credentials, screenshots, or private paths are bundled.
+
+## Run locally
+
+Python 3.10 or newer is required.
+
+This main line targets modern Python. The customer-compatible Python 3.6.6 implementation is maintained separately on the public `py36-compat` branch and has its own dependency and validation instructions.
 
 ```bash
 python3 -m soa_generator.service --port 8765
 ```
 
-打开 `http://127.0.0.1:8765/`。来源可以是本机路径，也可以是 SSH 主机别名加远程路径。远程读取使用现有 SSH 配置和 BatchMode，只读访问。批量解析会在后台运行并显示当前文件及处理进度。工具只读取已选择的目录和文件；压缩包、未解压工艺库不在处理范围内。
+Open `http://127.0.0.1:8765/`. The service reads only paths and files that the user selects. It can work with local paths and read-only SSH sources. Archives and unextracted process packages are outside the supported input boundary.
 
-## 命令行
+For a convenience launcher:
+
+- Windows: run `start_soa_generator.bat`.
+- Linux/macOS: run `./start_soa_generator.sh`.
+
+The launcher starts the local service and may open a browser. PDF extraction is optional and requires `pypdf`.
+
+## Command line
 
 ```bash
-python3 -m soa_generator.cli scan /path/to/pdk
-python3 -m soa_generator.cli parse /path/to/soa_spe.mdl
-python3 -m soa_generator.cli export /path/to/soa_spe.mdl /tmp/soa_generated.scs --formats spectre json
-# 模型内 SOA 默认保留原生引用；也可以选择只记录或近似输出
-python3 -m soa_generator.cli export /path/to/soa_spe.mdl /tmp/soa_generated.scs \
-  --model-source /path/to/hvmos_spe.mdl --model-soa-mode native
-# 使用脱敏的工艺适配器覆盖命名分类
-python3 -m soa_generator.cli export /path/to/soa_spe.mdl /tmp/soa_generated.scs \
+python3 -m soa_generator.cli scan /path/to/models
+python3 -m soa_generator.cli parse /path/to/soa-source.scs
+python3 -m soa_generator.cli export /path/to/soa-source.scs /tmp/soa-generated.scs --formats spectre json
+python3 -m soa_generator.cli export /path/to/soa-source.scs /tmp/soa-generated.scs \
   --adapter-config adapters/example.json
 ```
 
-解析器已经用远程 BCDA V1.3 的 `soa_spe.mdl` 做过真实验证：1,981 条规则、152 个 subckt 目标均可读取。
+The importer understands Spectre `assert` sources, model-internal SOA clues, device and subcircuit definitions, structured port topology, and selected manual evidence. Inferred values remain disabled until a user confirms them. Source evidence is preserved in derived project JSON and the original input is never modified.
 
-模型内 `gsoa/bsource` 文件支持四种导出模式：保留原生模型引用、只记录来源、只使用已启用外部规则的近似输出，以及原生模型加外部规则的双输出。近似输出不会重建模型曲线，双输出可能产生重复告警，项目 JSON 会保留警告。网页的“快速检查”可以在本机或 SSH 远程调用 Spectre，使用临时主网表验证 section/include、assert 参数和目标器件，并显示 Spectre 日志诊断。手册文本和 PDF 中的明确限值会作为 `documented` 证据进入矩阵；PDF 读取需要安装 `pypdf`。每次解析还会生成 PDK 覆盖摘要，可通过页面查看明细或调用 `/api/coverage`。曲线、典型值和范围不会自动改成单一 SOA 阈值，详见 [项目计划](docs/PROJECT_PLAN.md)。
+## Adapters
 
-项目文件使用 `soa-project/v1` schema；新工艺可以通过网页适配器文件入口、API 的 `adapter_config` 或 CLI 的 `--adapter-config` 提供 `soa-adapter/v1` 配置，覆盖器件族、scope、族电压、拓扑和隔离电压，也可以用 `check_rules` 提供带出处的手册限值。
+An adapter is a `soa-adapter/v1` JSON file that maps a user's naming conventions to generic device families, port roles, topology markers, and documented checks. The repository includes only a synthetic example. Replace its patterns and evidence paths with values from your own private process environment; do not commit those source files or credentials.
+
+## Source packages
+
+The build and packaging scripts are included for reproducibility. They operate on the public source tree and do not include ignored build output, screenshots, private research notes, or process data. Generated archives under `dist/` are intentionally ignored by Git.
+
+## Tests
+
+```bash
+python3 -m compileall -q soa_generator tests
+python3 -m unittest discover -s tests -v
+node -e "const fs=require('fs');const s=fs.readFileSync('web/index.html','utf8').match(/<script>([\\s\\S]*)<\\/script>/)[1];new Function(s);console.log('web script syntax ok')"
+```
+
+## Privacy boundary
+
+Keep process inputs, model files, manuals, SSH credentials, private keys, local screenshots, logs, and generated archives outside Git. Use a private adapter file for process-specific naming and limits. Public issues and pull requests should contain synthetic reproductions rather than proprietary model content.

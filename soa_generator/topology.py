@@ -8,7 +8,7 @@ import re
 from .models import Device, Rule
 
 
-ISOLATION_PORTS = frozenset({"iso", "isub", "nbl", "pepi", "hvnwell", "hvbn", "dpw", "ddnw", "dnw", "dnwell", "pwell", "pw"})
+ISOLATION_PORTS = frozenset({"iso", "isub", "isowell", "nbl", "pepi", "hvnwell", "hvbn", "dpw", "ddnw", "dnw", "dnwell", "pwell", "pw"})
 
 
 @dataclass(frozen=True)
@@ -49,7 +49,7 @@ def isolation_connections(device: Device) -> list[IsolationConnection]:
 
     # Without a diode graph these are structural candidates only: the
     # existence of a port does not establish a PN junction or its polarity.
-    ring_ports = [port for port in device.ports if port.lower() in {"iso", "nbl", "hvbn", "hvnwell", "ddnw", "dnw", "dnwell"}
+    ring_ports = [port for port in device.ports if port.lower() in {"iso", "isowell", "nbl", "hvbn", "hvnwell", "ddnw", "dnw", "dnwell"}
                   or device.port_roles.get(port) in {"isolation_ring", "isolation_nbl", "isolation_well"}]
     if not ring_ports and "isub" in ports:
         ring_ports = [ports["isub"]]

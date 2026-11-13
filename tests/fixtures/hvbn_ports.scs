@@ -1,7 +1,0 @@
-simulator lang=spectre
-inline subckt n50_hvbn_30v_demo (D G S B HVBN PSUB)
-ends n50_hvbn_30v_demo
-inner_bv assert sub=n50_hvbn_30v_demo expr="V(HVBN,B)" max=12 level=warning
-
-inline subckt n50_hvbn_demo (d g s b hvbn psub)
-ends n50_hvbn_demo

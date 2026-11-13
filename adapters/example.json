@@ -1,35 +1,25 @@
 {
   "schema": "soa-adapter/v1",
-  "id": "example-process",
+  "id": "example-adapter",
   "version": "0.1",
-  "description": "脱敏适配器示例",
+  "description": "Synthetic adapter demonstrating generic naming and topology metadata",
   "device_rules": [
     {
-      "pattern": "^custom12_",
+      "pattern": "^demo_ldmos_",
       "category": "LDMOS",
       "family": "ldmos",
       "scope": "active",
-      "family_voltage": 12.0,
-      "topology": ["iso"]
+      "topology": ["isolated"]
     },
     {
-      "pattern": "^custom_iso_30v",
-      "isolation_voltage": 30.0,
-      "isolation_confidence": "documented",
-      "topology": ["iso", "nbl"]
-    }
-  ],
-  "check_rules": [
-    {
-      "pattern": "^custom12_",
-      "name": "documented_custom12_gate_voltage",
-      "limit_kind": "Vgs",
-      "expr": "v(g,bs)",
-      "maximum": "5.5",
-      "minimum": "-5.5",
-      "source_path": "manuals/example_process_manual.pdf",
-      "page": 42,
-      "note": "示例工艺手册的栅极对体端绝对耐压，已按设计裕量记录。"
+      "pattern": "^demo_isolated_",
+      "isolation_confidence": "inferred",
+      "topology": ["isolated"],
+      "isolation_type": "junction",
+      "port_roles": {
+        "deep_well": "isolation_well",
+        "substrate": "bulk_substrate"
+      }
     }
   ]
 }

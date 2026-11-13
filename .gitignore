@@ -3,6 +3,12 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 *.log
+build/
+dist/
+.build-venv/
+.build-deps/
+*.spec
+dist/SOA_Check_Generator-release.tar.gz
 
 # Local screenshots and investigation artifacts may contain environment details.
 human/

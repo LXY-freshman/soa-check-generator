@@ -1,9 +1,9 @@
 simulator lang=spectre
-subckt n18_demo (d g s b nbl psub)
-ends n18_demo
+subckt demo_mos_low_demo (d g s b nbl psub)
+ends demo_mos_low_demo
 section soa_demo
-source_vsb assert sub=n18_demo expr="V(s,b)" min=-1.98 max=1.98 level=warning
-curve_low assert sub=n18_demo expr="v(d,s)>=4 && v(g,s)<0.5" level=warning
-curve_mid assert sub=n18_demo expr="v(d,s)>=3.2 && v(g,s)>=0.5 && v(g,s)<1" level=warning
-curve_high assert sub=n18_demo expr="v(d,s)>=3.1 && v(g,s)>=1" level=warning
+source_vsb assert sub=demo_mos_low_demo expr="V(s,b)" min=-1.98 max=1.98 level=warning
+curve_low assert sub=demo_mos_low_demo expr="v(d,s)>=4 && v(g,s)<0.5" level=warning
+curve_mid assert sub=demo_mos_low_demo expr="v(d,s)>=3.2 && v(g,s)>=0.5 && v(g,s)<1" level=warning
+curve_high assert sub=demo_mos_low_demo expr="v(d,s)>=3.1 && v(g,s)>=1" level=warning
 endsection soa_demo

@@ -1,49 +1,17 @@
 # Changelog
 
-## Unreleased
+## Next
 
-- 按真实模型二极管连接生成隔离结方向，支持已选模型文件间关联、二极管包装子电路与多层隔离；MOS、BJT、二极管、Varactor、电阻、电容共用反向耐压和正向导通候选。
-- 内外隔离限值分别取证；不再把 pocket 名称等级复制到内结，不生成 PEPI/PSUB、Nwell/NBL 等仅凭名称假定的直接 PN 结或任意 NBL/drain 检查；缺值默认关闭。
-- 适配器支持端口角色、明确 P/N 结和介质隔离排除；CLI 与网页共用导入管线，页面显示隔离正向导通/注入与结构约束。
-- 修复 HVBN/HVNWELL 隔离器件漏掉到 PSUB 外侧大衬底检查的问题：候选和矩阵共享拓扑关系，分别显示对内/对外检查；未知隔离等级保持空值，网页推断不再回退到 MOS 族电压。
-- 修复反向标量电压重复推断：`Vsb/Vbs` 等端口对换向后比较上下限，参数边界保持符号表达式，原生来源不变。
-- 修复导出仅保留一段 SOA 曲线的问题：不同条件表达式独立导出，互补单边限制与不同持续时间/作用域保留；网页预览和快速检查共用后端选择逻辑。
-- 增加 Spectre `subckt`/`inline subckt` 端口解析，识别 `nbl`、`psub`、`pepi`、`iso` 等拓扑端口。
-- 根据模型端口和器件命名生成隔离耐压候选规则；候选默认关闭，并在界面标记为推断、待确认。
-- 识别常见 `nch2d5`、`nch3d3` 和 `nbl_7v`/`nbl_12v` 等工艺命名中的电压信息。
-- 规则卡显示来源确认状态和推断说明，避免把候选规则误当成工艺原生规则。
-- 规则保存并显示结构化端口对；原生隔离检查优先于推断候选。
-- 增加脱敏模型端口 fixture 和解析测试。
-- 区分普通 `bsource` 与 `gsoa`/`soa_*` 模型内 SOA，并在解析结果区显示每个文件的处理状态。
-- 增加模型内 SOA 导出模式：原生引用、来源提示、近似输出、双输出；网页和 CLI 共用同一套模式。
-- 增加电阻、二极管、BJT、Varactor、MIM/MOM、ESD 类别规则候选；三端电阻分别生成端子对衬底检查，所有非原生候选默认关闭。
-- 增加本机/SSH Spectre 快速检查，解析临时主网表、SOA section 和 Spectre 日志，并将语法、目标器件和规则参数问题显示在界面中。
-- 增加 `soa-project/v1` 项目 schema、项目校验 API，以及 `soa-adapter/v1` 工艺适配器配置；网页和 CLI 可保存/加载适配器元数据。
-- 完善用户规则生命周期：重命名、复制、删除、恢复来源、编辑备注；覆盖值会进入 Spectre、快速检查和项目 JSON。
-- 将简单 SOA 区域图移入暂缓队列，下一阶段优先补齐器件参数和工艺数据解析。
-- 提取模型中的 `bv_max`、`bv/vb`、`ibv`、`fv_max` 等安全参数，并让非 MOS 候选优先使用模型证据。
-- 对 Spectre MOS/LDMOS/DEMOS 子电路按端口和族电压生成 `Vds/Vgs/Vbs/Vbd` 候选，模型端口 `bv_max` 优先且自动去重。
-- 解析 Spectre subckt 父子依赖；父器件导出自动包含子规则，子器件仍保留独立目标和高级独立导出入口。
-- 增加基础物理检查矩阵候选、`missing/inferred` 状态、推断值填充入口和来源可信度检查入口；空值候选不会进入导出。
-- 增加器件档案阶段字段、档案完整度和物理检查矩阵摘要；器件清单先形成档案，再由模型和其他资料补充。
-- 扩展物理检查矩阵：区分 LDMOS/DEMOS 的 BS 体源端和独立栅极电压，增加体二极管、BJT 三端、电阻/二极管正向检查、隔离到体端/漏极候选，以及模型 `jmax/current_density` 候选。
-- 明确端口语义：`PSUB` 记录为大衬底 `bulk_substrate`，`NBL/PEPI/ISO` 记录为隔离结构；普通带 PSUB 的 MOS 不再因衬底端口被判为隔离器件。
-- 扩展 `soa-adapter/v1.check_rules`，允许把工艺手册限值作为带路径、页码和备注的 `documented` 证据接入矩阵和来源冲突选择。
-- 增加文本/PDF 手册限值提取；明确的 `Vgs/Vds/Vbd`、隔离和电流密度行会绑定到器件端口语义，曲线和典型范围不会被自动改写成 SOA 阈值。
-- 明确范围：只处理用户选择的可直接读取文件和目录，压缩包及未解压工艺库不自动处理。
-- 建立 BCDA V1.3 真实 PDK 覆盖基线，记录器件、原生 SOA、拓扑候选、端口缺失和来源冲突统计。
-- 增加多行手册表格解析、PDK 覆盖摘要和 `/api/coverage` 接口；真实原生 SOA 曲线与标量绝对值候选不再误报为同类冲突。
-- 器件档案现在保留模型文件和定义行号，覆盖报告区分模型已匹配器件与仅存在于器件列表的器件。
-- 去除从 MOS 族电压生成隔离耐压的伪推断；无明确隔离等级时保留 NBL 相关空值检查。
-- 批量解析改为后台任务，界面显示文件读取/解析、器件合并、候选生成和矩阵构建进度及耗时。
-- 解析文件结果列表改为默认收起，摘要显示文件、器件和规则总数，详情中保留逐文件路径及解析状态。
-- 来源文件类别标题显示已选/总数并随勾选即时更新；解析进度移到解析按钮下方；SOA 规则 level 标签增加报告等级悬停说明。
-- 隔离环拓扑候选补充 `ISO-PSUB` 外侧大衬底检查，并保留已有 `ISO-body` 内侧检查。
-- SOA 规则摘要将来源类型与 Spectre 报告等级分成独立文字标签，展开编辑区也明确标注“报告等级”。
+- Added structured parsing for model definitions, ports, source provenance, and compound device relationships.
+- Added source-priority resolution, rule overrides, missing-value states, and explicit confirmation before inferred checks can be exported.
+- Added topology-aware candidates for isolation structures, substrate connections, parasitic paths, and non-MOS device families.
+- Added local and read-only SSH input, background parsing progress, coverage summaries, and Spectre quick checks.
+- Added `soa-project/v1` validation and `soa-adapter/v1` configuration for private process-specific naming and evidence.
+- Added synthetic fixtures and tests for duplicate handling, rule identity, topology, model-internal SOA clues, and export behavior.
+- Added reproducible source build and packaging helpers that exclude private and ignored artifacts.
 
-## Unreleased
+## Earlier
 
-- 建立本地浏览器 + Python 服务的 SOA 导入、编辑和导出基线。
-- 支持 Spectre `assert` 的 `sub/subs` 解析、规则分组、min/max 合并和用户规则。
-- 支持本机/SSH 路径扫描、器件树、来源证据和导出集总览。
-- 记录 BCDA、A6217、TPS6282、UCC21750、UNT PDK 调查结果。
+- Established the local browser and Python service workflow for importing, editing, and exporting SOA checks.
+- Added Spectre `sub`/`subs` parsing, rule grouping, min/max merging, source evidence, and user-authored rules.
+- Added JSON project export/import and a configurable inference strategy for missing evidence.

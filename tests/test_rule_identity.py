@@ -43,12 +43,12 @@ class RuleIdentityTests(unittest.TestCase):
 
     def test_asymmetric_bounds_swap_and_negate_in_matrix(self):
         rules = parse_spectre_asserts(
-            'a assert sub=n18_demo expr="v(s,b)" max=1.2 min=-3\n'
-            'b assert sub=n18_demo expr="v(b,s)" max=3 min=-1.2\n'
+            'a assert sub=demo_mos_low_demo expr="v(s,b)" max=1.2 min=-3\n'
+            'b assert sub=demo_mos_low_demo expr="v(b,s)" max=3 min=-1.2\n'
         )
         self.assertEqual(canonical_scalar_bounds(rules[0]), ("3", "-1.2"))
         self.assertFalse(next(iter(resolve_rule_groups(rules).values())).conflict)
-        device = classify_device("n18_demo")
+        device = classify_device("demo_mos_low_demo")
         apply_port_metadata(device, ["d", "g", "s", "b"])
         matrix = next(item for item in build_check_matrix(device, rules) if item["limit_kind"] == "Vbs")
         self.assertEqual(matrix["terminal_pair"], ["b", "s"])
@@ -93,11 +93,11 @@ class RuleIdentityTests(unittest.TestCase):
 
     def test_resolve_preview_returns_only_scalar_alternatives_as_conflicts(self):
         rules = parse_spectre_asserts(
-            'a assert sub=n18_demo expr="v(s,b)" max=1 min=-3\n'
-            'b assert sub=n18_demo expr="v(b,s)" max=3 min=-2\n'
-            'c assert sub=n18_demo expr="v(s,b)>4 && v(g,s)>1"\n'
+            'a assert sub=demo_mos_low_demo expr="v(s,b)" max=1 min=-3\n'
+            'b assert sub=demo_mos_low_demo expr="v(b,s)" max=3 min=-2\n'
+            'c assert sub=demo_mos_low_demo expr="v(s,b)>4 && v(g,s)>1"\n'
         )
-        device = classify_device("n18_demo")
+        device = classify_device("demo_mos_low_demo")
         apply_port_metadata(device, ["d", "g", "s", "b"])
         result = resolve_project_rules({"rules": [rule.to_dict() for rule in rules], "devices": [device.to_dict()]})
         self.assertEqual(len(result["selected_rule_ids"]), 2)
@@ -128,7 +128,7 @@ class RuleIdentityTests(unittest.TestCase):
         restored = [_rule_from_dict(item) for item in project["rules"]]
         self.assertEqual(render_spectre(select_rules(restored, export_set)), rendered)
         with patch("soa_generator.service._run_local_spectre_check", return_value=(0, "")) as runner:
-            result = quick_check(selected, ["n18_demo"], {"kind": "local"})
+            result = quick_check(selected, ["demo_mos_low_demo"], {"kind": "local"})
             self.assertTrue(result["ok"])
             self.assertEqual(runner.call_args.args[0], rendered)
 
@@ -141,9 +141,9 @@ class RuleIdentityTests(unittest.TestCase):
         self.assertEqual(rule.original["expr"], "v(s,b)")
 
     def test_reversed_isolation_and_other_voltage_pairs_preserve_direction(self):
-        device = classify_device("n50_iso_30v_ckt")
+        device = classify_device("demo_mos_mid_iso_30v_ckt")
         apply_port_metadata(device, ["d", "g", "s", "b", "iso", "psub"])
-        rules = parse_spectre_asserts('a assert sub=n50_iso_30v_ckt expr="v(psub,iso)" min=-30')
+        rules = parse_spectre_asserts('a assert sub=demo_mos_mid_iso_30v_ckt expr="v(psub,iso)" min=-30')
         self.assertEqual(rules[0].limit_kind, "isolation_bv")
         candidates = topology_rule_candidates([device], rules)
         self.assertFalse(any(item.terminal_pair == ["iso", "psub"] for item in candidates))

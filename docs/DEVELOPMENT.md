@@ -1,33 +1,28 @@
-# 开发与版本管理
+# Development
 
-本项目使用 Git 管理。源码、测试、文档和可复现的项目配置进入版本库；工艺原始文件、SSH 凭据、密码、临时输出、日志和本地截图不进入版本库。
+Source code, synthetic tests, generic documentation, and reproducible project configuration belong in Git. User process inputs, model files, manuals, SSH credentials, private keys, logs, screenshots, and generated archives do not.
 
-## 日常流程
+## Change loop
 
-1. 从 `main` 创建短生命周期分支，例如 `feature/model-parser` 或 `fix/rule-grouping`。
-2. 每次提交只完成一个可描述的变更，提交信息使用动词开头，例如 `Add BCDA model metadata parser`。
-3. 提交前运行：
+1. Make one focused change on a short-lived branch.
+2. Add or update a synthetic fixture when a parser or process convention changes.
+3. Run the checks below.
+4. Inspect `git diff --check`, `git status`, and the file list for private paths or source data.
 
-   ```bash
-   python3 -m compileall -q soa_generator
-   python3 -m unittest discover -s tests -v
-   node -e "const fs=require('fs');const s=fs.readFileSync('web/index.html','utf8').match(/<script>([\\s\\S]*)<\\/script>/)[1];new Function(s);console.log('web script syntax ok')"
-   ```
+```bash
+python3 -m compileall -q soa_generator tests
+python3 -m unittest discover -s tests -v
+node -e "const fs=require('fs');const s=fs.readFileSync('web/index.html','utf8').match(/<script>([\\s\\S]*)<\\/script>/)[1];new Function(s);console.log('web script syntax ok')"
+git diff --check
+```
 
-4. 检查 `git diff --check` 和 `git status`，确认没有工艺文件、凭据或临时输出。
-5. 功能完成后合并回 `main`，同时更新 `docs/PROJECT_PLAN.md` 和必要的 ADR/词汇表。
+The `py36-compat` branch runs the same checks under CPython 3.6.6. The modern main line uses its documented current Python target; a main-line check does not replace compatibility-branch validation.
 
-项目文件使用 `soa-project/v1`；工艺差异使用 `soa-adapter/v1` JSON 配置。适配器应先通过 `/api/validate_adapter` 或测试验证，再用于解析。
+Project files use `soa-project/v1`. Process differences belong in a private `soa-adapter/v1` JSON file and should be validated with `/api/validate_adapter` before use.
 
-## 数据与隐私边界
+## Privacy checks
 
-- PDK 原始目录只读，不复制进仓库。
-- 项目 JSON 可以保存规则来源和用户覆盖，但不得保存 SSH 密码或私钥内容。
-- `human/` 截图只用于本地界面调试，默认被 Git 忽略。
-- 远程调查结果只记录脱敏后的路径模式、版本和规则事实。
-
-## 提交前检查
-
-- 新增解析器必须有最小真实样例或单元测试。
-- 规则合并、推断和导出变更必须验证来源与输出内容。
-- UI 变更需要检查窄窗口、长路径、长表达式和空状态。
+- Keep original process data read-only and outside the repository.
+- Never store SSH passwords, private keys, or raw credentials in project JSON, tests, or documentation.
+- Use synthetic names, paths, limits, and model snippets in fixtures and examples.
+- Review generated source packages before sharing them.

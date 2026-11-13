@@ -1,99 +1,33 @@
-# SOA 检查语句生成器项目计划
+# SOA Check Generator Project Plan
 
-## 当前目标
+## Current scope
 
-建立一个本地浏览器工具：用户选择或输入本机/SSH 工艺路径，工具发现 PDK 器件和 SOA 源文件，解析规则与来源，允许选择器件和规则并修改派生配置，最后复制网页文本或导出 Spectre/JSON 文件。
+Build a local browser tool that lets a user select readable model and documentation files, discover device and SOA sources, review provenance, edit derived checks, and export Spectre or JSON output.
 
-## 已确定的边界
+## Boundaries
 
-- 工艺配置绑定明确版本，原始 PDK 只读。
-- 本地 Python 小服务负责路径访问和解析，浏览器负责可视化编辑与导出。
-- 支持本机路径和只读 SSH 路径。
-- 只处理用户选择的可直接读取目录和文件；压缩包、未解压工艺库不在项目范围内，不自动解压或扫描其中内容。
-- 导出集可按器件、组合变体、规则类别和单条规则选择，并可重新导入。
-- 规则源文件是证据，用户可以在派生配置中覆盖。
-- 先解析 PDK 自带 SOA/eSOA；缺失时才按器件特征、手册、模型和可配置裕量推断。
-- 快速检查只做 Spectre 语法、section、参数和器件引用检查，不运行完整电路仿真。
+- User-provided process inputs remain read-only and never enter this repository.
+- Only directly readable files and directories selected by the user are processed; archives and unextracted packages are out of scope.
+- Adapters carry process-specific naming and evidence outside the core code.
+- Inferred checks remain disabled until a user confirms them.
+- Generated projects preserve source paths, mechanisms, and confidence without storing passwords or private keys.
+- Quick checks inspect syntax, sections, parameters, and target references; they do not run a complete circuit simulation.
 
-## 里程碑
+## Implemented
 
-### M0 资料和模型
+- Local and read-only SSH discovery with candidate selection and duplicate handling.
+- Spectre assertion parsing, model-internal SOA detection, device-list parsing, model limits, and subcircuit dependencies.
+- Device families, port roles, topology markers, compound devices, and physical check matrix candidates.
+- Source provenance, priority resolution, conflicts, rule overrides, and user-confirmed values.
+- Spectre, browser text, and `soa-project/v1` JSON export/import.
+- `soa-adapter/v1` configuration for naming, family metadata, topology, port roles, and documented checks.
+- Background parsing, coverage summaries, source review, and local/remote Spectre quick checks.
+- Synthetic fixtures, unit tests, and reproducible source packaging helpers.
 
-- [x] 远程 Cadence/Spectre 版本确认
-- [x] BCDA、A6217、TPS6282、UCC21750、UNT 路径核验
-- [x] SOA 机制分类：Spectre assert/eSOA 与模型内 gsoa/bsource
-- [x] 术语、架构和推断优先级记录
+## Planned
 
-### M1 导入与解析
-
-- [x] 本机/SSH 路径扫描
-- [x] `.devicelist`、`device_list`、Cat 文件和 SOA 源发现
-- [x] 扫描结果复选列表、解析集和去重
-- [x] Spectre `sub`/`subs` assert 解析
-- [x] 组合器件、拓扑和隔离等级识别（基础字段）
-- [x] 来源证据和可信度记录
-- [x] 普通模型/Cat/文档的文件角色与读取状态
-- [x] 文本/PDF 手册中的明确器件限值提取，保留页码和原文证据；曲线/典型值不自动转换为单一阈值
-- [x] 对 BCDA V1.3 已解压目录建立脱敏真实 PDK 覆盖基线
-- [x] 解析结果提供 PDK 覆盖摘要和 `/api/coverage` 明细接口
-- [x] 批量解析后台执行并显示文件级进度、当前文件和总耗时
-- [x] 器件档案保留模型文件来源，并报告器件列表与模型定义的匹配覆盖率
-- [x] 模型 `subckt/model` 基础识别和模型内 SOA 线索
-- [x] 同一 PDK 多个已选 Spectre 模型文件合并到统一器件档案，并保留逐文件来源
-- [x] 区分普通 `bsource` 与 `gsoa`/`soa_*` 模型内 SOA，并显示逐文件解析结果
-- [x] Spectre `subckt`/`inline subckt` 端口解析
-- [x] `nbl`/`pepi`/`iso` 隔离拓扑与 `psub` 大衬底端口语义识别
-- [x] 电阻、二极管、BJT、Varactor、MIM/MOM、ESD 类别识别和端子解析
-- [x] Spectre/HSPICE 模型安全参数提取（`bv_max`、`bv/vb`、`ibv`、`fv_max`）
-- [x] 扫描 Spectre 子电路模型生成关闭的 `Vds/Vgs/Vbs/Vbd` 和端子耐压候选
-- [x] 基于端口和模型参数生成基础物理检查矩阵候选，空值保留为待填写状态
-- [x] 解析 Spectre subckt 父子依赖并按组合器件展开导出规则
-- [ ] CDF/OA 终端顺序和参数表解析
-
-### M2 派生配置与导出
-
-- [x] 导出集和 `soa-project.json`
-- [x] Spectre `.scs`、网页文本和 JSON 导出
-- [x] 规则覆盖、恢复原始值和导入回写（基础 UI）
-- [x] 模型内 SOA 的原生/近似/双输出模式
-- [x] 模型内部 SOA 与外部 assert 的转换边界和警告
-
-### M3 可视化和验证
-
-- [x] 器件树、规则卡片、组合器件基础分类视图
-- [x] 器件树作为唯一导出选择状态，详情页显示来源证据
-- [x] 固定框截断显示、完整路径/表达式详情查看
-- [x] 本机文件和目录手动选择
-- [x] 规则按 Vds/Vgs 等语义类分组，支持用户新增规则
-- [x] 相同表达式的 min/max 规则合并为一条可编辑规则
-- [x] 标量电压反向端口去重及边界换向；条件曲线按完整表达式保留，网页预览、导出和快速检查共用后端规则选择
-- [x] 来源路径固定省略并支持点击查看完整路径
-- [x] 解析文件按类型折叠分组
-- [x] 端口解析后生成隔离环/NBL/PSUB/PEPI 拓扑规则候选（默认关闭并标记推断）
-- [x] 规则保存结构化端口对，并跳过已有原生隔离检查的重复候选
-- [x] 隔离候选与矩阵共用端口关系；支持 HVBN/HVNWELL 对外 PSUB 与对内 body 的独立规则，并在界面区分内外侧
-- [x] 隔离 PN 结从已选模型的二极管连接/包装子电路提取 P/N 方向；各器件族共用内外反向耐压和正向导通候选，不复制内外等级；支持适配器声明及介质隔离排除
-- [x] 非 MOS 器件生成关闭的类别化端子/衬底电压候选，并保留手册指导值说明
-- [x] 用户规则自定义名称、备注和生命周期（源文件来源保留）
-- [~] Vds/Vgs 等简单 SOA 区域图（暂缓，当前收益不足）
-- [x] 本地或远程 Spectre 快速检查（临时主网表、section include、日志诊断）
-- [x] 警告、待确认和推断证据面板
-- [x] 规则卡显示推断/冲突状态和来源说明
-- [~] 按器件物理结构生成档案检查矩阵：MOS/LDMOS/DEMOS、二极管、BJT、电阻、无源和 ESD 的基础端子/电流/隔离候选已实现，完整文档适用性和更多工艺特例待补；规则解析层已统一来源、优先级和冲突状态
-- [x] 解析来源类别优先级滑块、唯一候选导出和冲突项单独选源 UI
-- [x] “生成推断值”按钮、空值保留和用户确认/启用状态
-- [x] 规则摘要显示端口、边界、来源和颜色提示
-- [x] 适配器文档限值作为 `documented` 证据进入规则矩阵和来源优先级
-- [x] 导出前可信度检查、上一个/下一个跳转和强制导出审计
-- [~] 父器件/子器件组合导出 UI 已完成，浏览器自动化测试待补
-
-### M4 扩展入口
-
-- [x] 稳定 `soa-project/v1` JSON schema 和项目校验接口
-- [x] 本地 CLI/API 扩展入口
-- [x] `AGENTS.md` 和适配器开发文档
-- [x] 新工艺分类、端口和推断策略配置的适配器基础
-
-## 暂缓任务
-
-- Vds/Vgs 简单 SOA 区域图：保留规则文本、边界和导出检查，等真实使用场景证明图形能提高判断效率后再恢复。
+- Python 3.6.6 compatibility branch for the customer Linux environment: syntax audit, runtime compatibility helpers, pinned offline dependencies, independent validation, and manual backport workflow.
+- CDF/OA terminal order and parameter-table parsing.
+- More complete applicability metadata for physical matrix entries.
+- Browser automation coverage for compound-device export flows.
+- Optional visualization of conditional SOA regions after the text and provenance workflows are stable.

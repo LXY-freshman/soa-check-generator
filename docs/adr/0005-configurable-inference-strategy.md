@@ -1,6 +1,6 @@
 # Use a configurable inference strategy
 
-PDK 资料同时包含器件族等级、端子绝对限值、拓扑差异、DCSOA 曲线和模型参数。器件名中的电压数字只能提供候选线索；当曲线或明确限值存在时必须优先使用，缺少曲线时才按器件类别配置的安全裕量（例如 10%）生成候选值。该策略适用于 MOS、LDMOS、DEMOS、二极管、BJT、电阻和电容等类别，并把证据链写入派生配置。
+Process inputs may contain device-family levels, absolute terminal limits, topology differences, conditional SOA curves, and model parameters. Numbers in a device name are only candidate clues; explicit limits take priority, and a configurable safety margin may fill a candidate only when stronger evidence is absent. The strategy covers MOS, LDMOS, DEMOS, diode, BJT, resistor, and capacitor families while preserving the evidence chain in the derived configuration.
 
 **Status**: accepted
 

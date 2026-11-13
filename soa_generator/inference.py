@@ -58,10 +58,10 @@ def _bjt_pair(device: Device) -> tuple[str, str] | None:
 
 def _named_resistor_limit(device: Device, three_terminal: bool) -> tuple[float | None, str]:
     value = device.name.lower()
-    if "hv" in value and three_terminal:
-        return 120.0, "工艺手册中的 HV 三端电阻 Vop 指导值约 120 V；这不是原生 SOA 曲线。"
+    if "high" in value and three_terminal:
+        return 120.0, "适配器或手册提供的高压三端电阻 Vop 指导值；这不是原生 SOA 曲线。"
     if three_terminal:
-        return 30.0, "工艺手册中的非 HV 三端电阻对衬底偏压指导值约 30 V；这不是原生 SOA 曲线。"
+        return 30.0, "适配器或手册提供的普通三端电阻对衬底偏压指导值；这不是原生 SOA 曲线。"
     if device.family_voltage is not None:
         return device.family_voltage * 1.10, "器件命名或工艺族电压乘以 10% 经验裕量。"
     return None, "缺少电阻工作电压或手册上限，不能安全生成数值候选。"

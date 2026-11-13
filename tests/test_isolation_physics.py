@@ -53,9 +53,9 @@ class IsolationPhysicsTests(unittest.TestCase):
             self.assertIn("isolation_forward_voltage", kinds, name)
 
     def test_no_common_forward_value_or_copy_of_outer_rating_to_inner(self):
-        text = FIXTURE.read_text().replace("nch_demo_iso", "n50_iso_30v_demo")
+        text = FIXTURE.read_text().replace("nch_demo_iso", "demo_mos_mid_iso_30v_demo")
         payload = parse_text(text, "ratings.scs")
-        isolation = [item for item in payload["rules"] if item["target"] == "n50_iso_30v_demo" and item["limit_kind"].startswith("isolation")]
+        isolation = [item for item in payload["rules"] if item["target"] == "demo_mos_mid_iso_30v_demo" and item["limit_kind"].startswith("isolation")]
         for item in isolation:
             expected = "30" if item["terminal_pair"] == ["iso", "sub"] and item["limit_kind"] == "isolation_bv" else None
             self.assertEqual(item["maximum"], expected)
@@ -97,13 +97,13 @@ class IsolationPhysicsTests(unittest.TestCase):
 
     def test_documented_same_potential_constraint_is_visible_and_exportable(self):
         config = {"schema":"soa-adapter/v1", "id":"pmos-variant", "version":"1", "check_rules":[{
-            "pattern":"^pch_demo$", "limit_kind":"isolation_constraint", "expr":"v(b,hvbn)",
+            "pattern":"^pch_demo$", "limit_kind":"isolation_constraint", "expr":"v(b,isowell)",
             "maximum":"0", "minimum":"0", "source_path":"manual.pdf", "page":52}]}
-        payload = parse_text('subckt pch_demo (d g s b hvbn psub)\nends pch_demo\n','pmos.scs',adapter_config=config)
+        payload = parse_text('subckt pch_demo (d g s b isowell psub)\nends pch_demo\n','pmos.scs',adapter_config=config)
         matrix = next(item for item in payload['devices'][0]['check_matrix'] if item['limit_kind']=='isolation_constraint')
         self.assertEqual(matrix['source']['page'],52)
         self.assertEqual(matrix['maximum'],'0')
-        self.assertIn('expr="v(b,hvbn)" max=0 min=0',render_spectre(select_rules([_rule_from_dict(item) for item in payload['rules']],ExportSet())))
+        self.assertIn('expr="v(b,isowell)" max=0 min=0',render_spectre(select_rules([_rule_from_dict(item) for item in payload['rules']],ExportSet())))
 
     def test_bad_adapter_connections_rejected(self):
         config = {"schema":"soa-adapter/v1", "id":"bad", "version":"1", "device_rules":[{
@@ -112,9 +112,9 @@ class IsolationPhysicsTests(unittest.TestCase):
         self.assertTrue({'isolation_type','isolation_junctions'} <= codes)
 
     def test_unexposed_substrate_is_a_coverage_gap_not_an_exportable_node(self):
-        text = 'model j diode\nsubckt n50_iso_demo (d g s b nbl)\nd1 (b nbl) j\nends n50_iso_demo\n'
+        text = 'model j diode\nsubckt demo_mos_mid_iso_demo (d g s b nbl)\nd1 (b nbl) j\nends demo_mos_mid_iso_demo\n'
         payload = parse_text(text, 'hidden_substrate.scs')
-        device = next(item for item in payload['devices'] if item['name']=='n50_iso_demo')
+        device = next(item for item in payload['devices'] if item['name']=='demo_mos_mid_iso_demo')
         gaps = [item for item in device['check_matrix'] if item['isolation_side']=='outer']
         self.assertEqual(len(gaps), 1)
         self.assertEqual(gaps[0]['status'], 'missing')
